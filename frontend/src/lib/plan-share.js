@@ -8,7 +8,7 @@
 //  2. A clean, printable page (Save as PDF) where a single exercise never splits across
 //     a page break — each exercise, and each routine that fits, stays in one place.
 
-import { EXIDX, canonicalExId, isBodyweightEq, cardioMetrics } from './exercises.js'
+import { EXIDX, canonicalExId, isBodyweightEq, cardioMetrics, bandsOf } from './exercises.js'
 import { cleanUrl } from './media-refs.js'
 import { modeOf, exLine, MAX_PLANNED_WARMUPS } from './history.js'
 import { cardioLabel, cardioDefaults } from './cardio.js'
@@ -94,6 +94,8 @@ function cleanEx(e) {
   // How the exercise is logged travels too (issues #31/#32) — the bodyweight flag only when
   // it disagrees with the catalogue, since agreeing is what the other end already assumes.
   if (e.bodyweight != null && e.bodyweight !== isBodyweightEq(e.id)) o.bodyweight = e.bodyweight
+  if (typeof e.bandAssist === 'boolean') o.bandAssist = e.bandAssist
+  if (typeof e.band === 'string') o.band = e.band
   // Reps work and timed holds (a per-side hold is an L and an R hold per set); never cardio.
   if (e.side && mode !== 'cardio') o.side = true
   // Progression settings travel with the plan — a shared Greyskull routine that arrives
@@ -179,6 +181,7 @@ function cleanCustom(c) {
   if (url) o.url = url
   if (typeof c.eq === 'string' && c.eq) o.eq = c.eq
   if (Array.isArray(c.metrics)) o.metrics = cardioMetrics(c)
+  if (typeof c.bandAssist === 'boolean') o.bandAssist = c.bandAssist
   const prim = muscleList(c.primaries)
   const sm = muscleList(c.secondaries).filter(m => !prim.includes(m))
   // `tg` is the legacy single primary; the form keeps it equal to the first primary.
@@ -209,7 +212,7 @@ export function buildPlanBundle(S, name) {
   // written after are read the same way at the other end.
   const week = {}
   WEEK_DAYS.forEach(d => { if (S.week?.[d]?.length) week[d] = [].concat(S.week[d]) })
-  return { opengym_plan: PLAN_FMT, exported: todayISO(), name: name || '', unit, week, routines, customEx }
+  return { opengym_plan: PLAN_FMT, exported: todayISO(), name: name || '', unit, week, routines, customEx, bands: [...bandsOf(S)] }
 }
 
 /**
@@ -259,6 +262,7 @@ export function parsePlan(raw, destinationUnit = 'kg') {
     name: (data.name || '').trim(),
     routines,
     week: data.week || {},
+    ...(Array.isArray(data.bands) ? { bands: [...data.bands] } : {}),
     customEx,
     dropped,
     routineCount: routines.length,
@@ -283,6 +287,7 @@ export function mergePlan(s, bundle, { schedule } = {}) {
   const destination = planUnit(s.unit == null ? 'kg' : s.unit)
   if (!destination) unitError()
   const source = convertedBundle(bundle, destination)
+  if (Array.isArray(source.bands)) s.bands = [...source.bands]
   s.customEx = s.customEx || []
   const exIdMap = {}
   ;(source.customEx || []).forEach(c => {

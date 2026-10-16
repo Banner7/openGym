@@ -274,11 +274,57 @@ export function defaultIncrement(exId, unit) {
 
 export function isAssisted(idOrEx) {
   if (!idOrEx) return false
+  if (isBandAssisted(idOrEx)) return false
   if (typeof idOrEx === 'string') return !!assistedShape(EXIDX[idOrEx])
   if (typeof idOrEx.assisted === 'boolean') return idOrEx.assisted
   if (typeof idOrEx.target?.assisted === 'boolean') return idOrEx.target.assisted
   const known = idOrEx.id ? EXIDX[idOrEx.id] : null
   return !!assistedShape(known || idOrEx)
+}
+
+// Band colours are ordered by the lifter, not by a manufacturer's claimed kilograms.
+export const DEFAULT_BANDS = ['yellow', 'red', 'black', 'purple', 'green', 'blue']
+export const bandsOf = S => Array.isArray(S?.bands) ? S.bands : DEFAULT_BANDS
+export const bandName = id => {
+  switch (id) {
+    case 'yellow': return t('Yellow')
+    case 'red': return t('Red')
+    case 'black': return t('Black')
+    case 'purple': return t('Purple')
+    case 'green': return t('Green')
+    case 'blue': return t('Blue')
+    case 'orange': return t('Orange')
+    case 'pink': return t('Pink')
+    case 'white': return t('White')
+    case 'gray': return t('Gray')
+    case 'brown': return t('Brown')
+  }
+  const name = String(id || '')
+  return t(name.charAt(0).toUpperCase() + name.slice(1))
+}
+const BAND_COLORS = { yellow: '#eab308', red: '#ef4444', black: '#27272a', purple: '#a855f7', green: '#22c55e', blue: '#3b82f6', orange: '#f97316', pink: '#ec4899', white: '#f4f4f5', gray: '#71717a', brown: '#92400e' }
+export const bandColor = id => BAND_COLORS[id] || 'var(--muted)'
+
+export function isBandAssisted(idOrEx) {
+  if (!idOrEx) return false
+  const cfg = typeof idOrEx === 'string' ? EXIDX[idOrEx] : idOrEx
+  if (!cfg) return false
+  if (typeof cfg.bandAssist === 'boolean') return cfg.bandAssist
+  if (typeof cfg.target?.bandAssist === 'boolean') return cfg.target.bandAssist
+  const ex = (cfg.id && EXIDX[cfg.id]) || cfg
+  if (typeof ex.bandAssist === 'boolean') return ex.bandAssist
+  return ['band', 'assisted'].includes(ex.eq) && assistedName(ex.n)
+    && !/stretch|mobility/i.test(ex.bp || '')
+    && /pull[ -]?up|chin[ -]?up|\bdips?\b|muscle[ -]?up|push[ -]?up/i.test(ex.n || '')
+}
+
+/** Positive when a is better; an unknown colour never beats a recorded set. */
+export function compareBandSets(a, b, S) {
+  const bands = bandsOf(S)
+  const ai = bands.indexOf(a?.band), bi = bands.indexOf(b?.band)
+  if (ai < 0) return bi < 0 ? 0 : -1
+  if (bi < 0) return 1
+  return bi - ai || (Number(a.r) || 0) - (Number(b.r) || 0)
 }
 
 /** The better of two loads for this exercise: less assistance, or more weight. */

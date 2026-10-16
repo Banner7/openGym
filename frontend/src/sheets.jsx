@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from './store/useStore.js'
 import { useUI } from './store/useUI.js'
-import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, allExercises, equipmentOf, byCategory, smOf, searchExercises, similarExercises, exOr, isAssisted, betterWeight, beatsWeight, isCustomEx } from './lib/exercises.js'
+import { EXDB, EXIDX, BODYPARTS, isCardio, isBodyweightEq, allExercises, equipmentOf, byCategory, smOf, searchExercises, similarExercises, exOr, isAssisted, isBandAssisted, bandsOf, bandName, compareBandSets, betterWeight, beatsWeight, isCustomEx } from './lib/exercises.js'
 import { activeProfile, exAvailable, ALL_EQUIPMENT, newProfile, profileEquipment, ACC_V } from './lib/equipment.js'
 import { fmtDate, fmtDateRange, fmtNum, fmtPlate, exerciseNameText, fmtVol, fmtDur, durPart, todayISO, isoOf, uid, exCount, routineCount, setsWorkCount, DAYN, DAYS, weekOrder, weekStartOf, weekDayOffset, MONTHS_LONG, ACCENTS } from './lib/format.js'
 import { lastEntryFor, bestWeightFor, bestWeightForEntry, buildSets, effectiveRoutineIds, workoutDay, workoutVolume, setsDone, setsDoneActive, setUnitsTotal, lastBW, sessionSections, setLabel, defaultConfig, cleanupSg, modeOf, effortOf, EFFORT, capEffort, stepEffort, isBw, isPerSide, sideReps, workSetsDone, applyIntensifierPlan, MAX_PLANNED_WARMUPS, NOTE_MAX } from './lib/history.js'
@@ -20,6 +20,7 @@ import { mediaOf, normalizeMediaRef, cleanUrl, workoutMediaOf } from './lib/medi
 import { syncMedia } from './lib/media-sync.js'
 import LineChart from './components/LineChart.jsx'
 import Stepper from './components/Stepper.jsx'
+import BandPicker from './components/BandPicker.jsx'
 import { durationSheet } from './components/DurationWheel.jsx'
 import { SG_NAME_MAX } from './lib/superset-meta.js'
 import { REST_MAX, fmtRest } from './lib/duration.js'
@@ -35,7 +36,7 @@ import { parseImport, mergeImport } from './lib/import-csv.js'
 import { importHevyData, HevyApiError, HEVY_DEV_SETTINGS, mergeHevyRoutines } from './lib/import-hevy.js'
 import { buildPlanBundle, parsePlan, mergePlan, printPlan, planPrintHTML } from './lib/plan-share.js'
 import { estimate1RM, best1RM, is1RMRecord, REP_CAP, formulaOf, FORMULA_NAMES } from './lib/onerm.js'
-import { exerciseHistory } from './lib/exercise-history.js'
+import { exerciseHistory, bestSetFor, bestBandSetForEntry } from './lib/exercise-history.js'
 import { isBellEx, dbLoadOf, dbLoadFor, withDbLoad, withMeaning, historyAs, entryDbLoad, currentDbLoad, isOneArm, ownedWeightsFor, dumbbellsOf, ownsDumbbells, withDumbbells, presetWeights, cleanWeights } from './lib/dumbbells.js'
 import { policyFor, defaultIncrement, POLICIES_FOR, POLICY_NAME, POLICY_DESC, MAX_BW_SETS, MAX_TRIPLE_SETS, weightIncrement } from './lib/progression.js'
 import { normalizeRepRange } from './lib/rep-range.js'
@@ -1016,7 +1017,7 @@ function ExerciseDetail({ ex, close }) {
     {/* No one-rep max on an assistance machine: the load is the help you were given, so the
         calculator would answer "your 1RM is 23 kg" about a number that gets smaller as you get
         stronger (issue #232). Cardio has none for the same kind of reason. */}
-    {!isCardio(ex) && !isAssisted(ex) && <OneRM ex={ex} />}
+    {!isCardio(ex) && !isAssisted(ex) && !isBandAssisted(ex) && <OneRM ex={ex} />}
     {instrFor(ex).length > 0 &&<><h4 className="sec">{t('How to')}{getLang() !== 'en' && !instrTranslated(ex) && <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}> · {t('instructions in English')}</span>}</h4><ol className="steps-list">{instrFor(ex).map((s, i) => <li key={i}>{s}</li>)}</ol></>}
     {/* The catalogue is community-edited (catalogue/README.md): a wrong muscle, a clumsy step or a
         missing translation is one tap from an issue that already names the exercise. */}
@@ -1036,10 +1037,10 @@ export const exerciseDetailSheet = ex => ui().openSheet(close => <ExerciseDetail
 function ExerciseHistory({ exId }) {
   const st = useStore(s => s.S)
   const ex = exOr(exId)
-  const h = useMemo(() => exerciseHistory(st, exId), [st.workouts, exId])
+  const h = useMemo(() => exerciseHistory(st, exId), [st.workouts, st.bands, exId])
   const [curve, setCurve] = useState('top')
   const onE1 = curve === 'e1rm' && h.e1rmPoints.length > 0
-  const unit = h.metric === 'weight' ? st.unit : h.metric === 'reps' ? t('reps') : h.metric === 'sec' ? 's' : h.metric === 'floors' ? t('floors') : h.metric === 'm' ? distanceUnit({ id: exId }, speedUnitOf(st)) : t('min')
+  const unit = h.metric === 'band' ? '' : h.metric === 'weight' ? st.unit : h.metric === 'reps' ? t('reps') : h.metric === 'sec' ? 's' : h.metric === 'floors' ? t('floors') : h.metric === 'm' ? distanceUnit({ id: exId }, speedUnitOf(st)) : t('min')
   const chartValue = value => h.metric === 'm' ? toDistance(value, unit) : value
   const e1Best = useMemo(() => Math.max(0, ...h.e1rmPoints.map(p => p.y)), [h])
   if (!h.total) return <>
@@ -1057,11 +1058,12 @@ function ExerciseHistory({ exId }) {
     {h.e1rmPoints.length > 0 && h.metric === 'weight' && <Segmented className="seg-range" value={curve} onChange={setCurve}
       options={[{ value: 'top', label: t('Top set') }, { value: 'e1rm', label: t('Est. 1RM') }]} />}
     <div className="chart" style={{ marginTop: 8 }}>
-      <LineChart points={onE1 ? h.e1rmPoints : h.metric === 'm' ? h.points.map(p => ({ ...p, y: chartValue(p.y) })) : h.points} h={140} unit={onE1 ? st.unit : unit} color="var(--blue)" />
+      <LineChart points={onE1 ? h.e1rmPoints : h.metric === 'm' ? h.points.map(p => ({ ...p, y: chartValue(p.y) })) : h.points} h={140} unit={onE1 ? st.unit : unit} color="var(--blue)"
+        formatY={h.metric === 'band' ? v => Number.isInteger(v) ? bandName(bandsOf(st)[bandsOf(st).length - v]) : '' : undefined} />
     </div>
     <div className="small row" style={{ margin: '6px 0 4px', gap: 5 }}>
       <Icon name="trophy" style={{ fontSize: 14, color: 'var(--yellow)' }} />
-      {t('Best:')} <b className="accent">{fmtNum(onE1 ? e1Best : chartValue(h.best))} {onE1 ? st.unit : unit}</b>
+      {t('Best:')} <b className="accent">{h.metric === 'band' ? h.bestLabel : <>{fmtNum(onE1 ? e1Best : chartValue(h.best))} {onE1 ? st.unit : unit}</>}</b>
     </div>
     <h4 className="sec">{h.sessions.length < h.total ? t('Last {0} sessions', h.sessions.length) : t('Sessions')}</h4>
     <div className="list">
@@ -1071,7 +1073,7 @@ function ExerciseHistory({ exId }) {
           <div className="ss">{s.sets.map(x => setLabel(exId, x, s.target, speedUnitOf(st))).join('  ·  ')}</div>
           {tail(s) && <div className="small dim" style={{ marginTop: 3 }}>{tail(s)}</div>}
         </div>
-        {s.value != null && s.value > 0 && <b className="accent nocap" style={{ whiteSpace: 'nowrap' }}>{fmtNum(chartValue(s.value))} {unit}</b>}
+        {s.value != null && s.value > 0 && <b className="accent nocap" style={{ whiteSpace: 'nowrap' }}>{h.metric === 'band' ? s.label : <>{fmtNum(chartValue(s.value))} {unit}</>}</b>}
       </div>)}
     </div>
   </>
@@ -1122,6 +1124,7 @@ function CustomExForm({ existing, prefill, onDone, close }) {
   const [n, setN] = useState(existing ? existing.n : (prefill || ''))
   const [bp, setBp] = useState(existing ? existing.bp : '')
   const [eq, setEq] = useState(existing ? (existing.eq || '') : '')
+  const [bandAssist, setBandAssist] = useState(() => isBandAssisted(existing || {}))
   const storedEq = existing && typeof existing.eq === 'string' && existing.eq && !ALL_EQUIPMENT.includes(existing.eq) ? existing.eq : null
   const [desc, setDesc] = useState(existing ? (existing.desc || '') : '')
   const [media, setMedia] = useState(() => mediaOf(existing))
@@ -1186,6 +1189,7 @@ function CustomExForm({ existing, prefill, onDone, close }) {
     const tg = (existing && prim.includes(existing.tg)) ? existing.tg : (primaryTaps.find(m => prim.includes(m)) || prim[0] || '')
     let id = existing && existing.id
     const extra = c => {
+      c.bandAssist = bandAssist
       if (!keepMedia) { if (ref) c.media = ref; else delete c.media }
       if (link) c.url = link; else delete c.url
     }
@@ -1217,6 +1221,7 @@ function CustomExForm({ existing, prefill, onDone, close }) {
           Hevy import). It stays a chip of its own, picked, so Save does not stop on "Pick equipment". */}
       {storedEq && <button key={storedEq} className={'chip' + (eq === storedEq ? ' on' : '')} onClick={() => setEq(storedEq)}>{t(storedEq)}</button>}
     </div>
+    {bp !== 'cardio' && <Row title={t('Band assistance')} subtitle={t('Log assistance by band color instead of weight.')}><Switch checked={bandAssist} onChange={setBandAssist} /></Row>}
     {bp && <>
       {bp !== 'cardio' && <MultiSelectRow title={t('Primary muscle groups')} sheetTitle={t('Primary muscle groups')}
         values={primaries}
@@ -1543,7 +1548,7 @@ const progressionStepIsValid = (step, policy, backoff = false) =>
 // Back-off sets (lib/backoff.js) are offered where there is a load to step down: rep work on a
 // loaded exercise, not a pyramid (it owns each set), not a rest-pause (one work set), not an
 // assistance machine (less load is harder there).
-const backoffOffered = (c, mode, ex, bw) => mode === 'reps' && !bw && !isAssisted({ ...c, id: ex.id })
+const backoffOffered = (c, mode, ex, bw) => mode === 'reps' && !bw && !isAssisted({ ...c, id: ex.id }) && !isBandAssisted({ ...c, id: ex.id })
   && !(Array.isArray(c.pyramid) && c.pyramid.length) && c.intensifier?.type !== 'restpause'
 
 // Double and triple progression both climb a rep range (`repsMin`..`reps`), so the sheet keeps it
@@ -1553,24 +1558,25 @@ const climbsRange = policy => policy === 'double' || policy === 'triple'
 const setsMaxOf = c => Math.max(Math.max(1, Math.round(c.sets) || 1), Math.min(MAX_TRIPLE_SETS, Math.round(c.setsMax) || 0))
 
 function ProgressionFields({ ex, mode, c, setC, routine, unit, perSide, bw }) {
+  const bandAssist = mode === 'reps' && isBandAssisted({ ...c, id: ex.id })
   // Triple progression adds sets and then load. Bodyweight work with nothing added already climbs
   // reps and then sets on its own (the rep ceiling below), and has no load to finish the cycle
   // with, so it is not offered there.
-  const options = (POLICIES_FOR[mode] || ['off']).filter(p => p !== 'triple' || !bw || c.weight > 0 || c.prog === 'triple')
+  const options = (POLICIES_FOR[mode] || ['off']).filter(p => p !== 'triple' || bandAssist || !bw || c.weight > 0 || c.prog === 'triple')
   if (options.length < 2) return null
   const inherited = policyFor({ id: ex.id }, routine, mode)
   const active = policyFor({ ...c, id: ex.id }, routine, mode)
   const inc = progressionStepOf(c, mode, ex, unit)
   const canBackoff = backoffOffered(c, mode, ex, bw)
   const backoff = canBackoff && c.backoff === true
-  const invalid = !progressionStepIsValid(inc, active, backoff)
+  const invalid = !bandAssist && !progressionStepIsValid(inc, active, backoff)
   // "26 → 24 → 22 kg": what the sets will open at, from the weight and step typed above.
   const preview = backoff && c.weight > 0 && inc > 0
     ? backoffWeights(c.weight, Math.max(1, Math.round(c.sets) || 1), inc).map(fmtNum).join(' → ') + ' ' + unit
     : ''
   const stride = mode === 'reps' && perSide ? 2 : 1
   const range = climbsRange(active) ? normalizeRepRange(c.reps, c.repsMin, stride) : null
-  const epleyEligible = mode === 'reps' && !isBw({ ...c, id: ex.id }) && (active === 'linear' || climbsRange(active))
+  const epleyEligible = !bandAssist && mode === 'reps' && !isBw({ ...c, id: ex.id }) && (active === 'linear' || climbsRange(active))
   // What is typed is shown as typed, 0 for an emptied field included: shown as the default 90
   // instead, the field could not be emptied to type a new percentage.
   const deloadPercent = Math.round((c.deloadFactor != null && Number.isFinite(Number(c.deloadFactor)) ? Number(c.deloadFactor) : 0.9) * 100)
@@ -1594,13 +1600,13 @@ function ProgressionFields({ ex, mode, c, setC, routine, unit, perSide, bw }) {
         options={[{ value: '', label: t('Follow the routine ({0})', t(POLICY_NAME[inherited])) },
           ...options.map(p => ({ value: p, label: t(POLICY_NAME[p]) }))]} />
     </div>
-    <div className="small dim" style={{ marginBottom: active === 'off' ? 18 : 10 }}>{t(POLICY_DESC[active])}</div>
+    <div className="small dim" style={{ marginBottom: active === 'off' ? 18 : 10 }}>{bandAssist ? t('Meet every work set target to move one band toward less assistance. Missed targets keep the same band.') : t(POLICY_DESC[active])}</div>
     {/* Double progression on a weighted exercise fills this row with four steppers; `cfgrow-4`
         lets it wrap into two pairs on phones, where four abreast left the inputs a few px wide. */}
     {(active !== 'off' || backoff) && <div className={'row cfgrow' + ((active === 'double' && epleyEligible) || active === 'triple' ? ' cfgrow-4' : '')} style={{ marginBottom: 18 }}>
-      <Stepper label={mode === 'time' ? t('Step (seconds)') : t('Step ({0})', unit)} value={inc}
+      {!bandAssist && <Stepper label={mode === 'time' ? t('Step (seconds)') : t('Step ({0})', unit)} value={inc}
         step={mode === 'time' ? 5 : 1.25} decimal={mode !== 'time'} invalid={invalid} className={invalid ? 'invalid' : ''}
-        onChange={v => setC(x => ({ ...x, inc: v }))} />
+        onChange={v => setC(x => ({ ...x, inc: v }))} />}
       {climbsRange(active) && <>
         {/* The draft stays as typed: normalising on every keystroke turned "12" into 92 (the
             "1" was pulled above the lower bound first). Save and the engine normalise anyway. */}
@@ -1665,12 +1671,13 @@ function ExConfig({ ex, existing, onSave, onDelete, onReplace, close, routine, i
   const machineCols = cardioColumns({ ...c, id: ex.id }, speedUnit)
   // Both default from the dataset and are then whatever the config says — see isBw.
   const bw = !cardio && isBw({ ...c, id: ex.id })
+  const bandAssist = mode === 'reps' && isBandAssisted({ ...c, id: ex.id })
   const perSide = isPerSide(c)
   // Pyramid sets: one rep target per set, in place of the flat Sets × Reps (CONTEXT.md).
   const pyramid = mode === 'reps' && isPyramid({ ...c, mode })
   const setPyramidAt = (i, v) => setC(x => ({ ...x, pyramid: x.pyramid.map((p, j) => (j === i ? v : p)) }))
   const progressionPolicy =policyFor({ ...c, id: ex.id }, routine, mode)
-  const progressionStepInvalid = !progressionStepIsValid(progressionStepOf(c, mode, ex, st.unit), progressionPolicy, c.backoff === true && backoffOffered(c, mode, ex, bw))
+  const progressionStepInvalid = !bandAssist && !progressionStepIsValid(progressionStepOf(c, mode, ex, st.unit), progressionPolicy, c.backoff === true && backoffOffered(c, mode, ex, bw))
   const activePolicy = policyFor({ ...c, id: ex.id }, routine, mode)
   // Both climb a range: the flat Reps stepper gives way to "Reps from" / "Reps up to".
   const ranged = mode === 'reps' && climbsRange(activePolicy)
@@ -1690,10 +1697,10 @@ function ExConfig({ ex, existing, onSave, onDelete, onReplace, close, routine, i
     // stays readable and "follow the routine" keeps meaning exactly that.
     const prog = {}
     if (c.prog) prog.prog = c.prog
-    if (c.inc > 0) prog.inc = c.inc
+    if (!bandAssist && c.inc > 0) prog.inc = c.inc
     // Epley deloading is configurable per occurrence, but the default stays omitted so older
     // plans retain their compact shape and keep the existing 90% behaviour.
-    if (mode === 'reps' && !bw && (activePolicy === 'linear' || climbsRange(activePolicy))) {
+    if (mode === 'reps' && !bw && !bandAssist && (activePolicy === 'linear' || climbsRange(activePolicy))) {
       const deloadFactor = Math.max(0.5, Math.min(0.95, Number(c.deloadFactor) || 0.9))
       if (deloadFactor !== 0.9) prog.deloadFactor = deloadFactor
     }
@@ -1705,6 +1712,8 @@ function ExConfig({ ex, existing, onSave, onDelete, onReplace, close, routine, i
     // flag now survives the switch and buildWorkSets doubles the planned sets instead.
     const flags = {}
     if (bw !== isBodyweightEq(ex.id)) flags.bodyweight = bw
+    if (typeof c.bandAssist === 'boolean') flags.bandAssist = c.bandAssist
+    if (bandAssist) { flags.bandAssist = true; flags.band = c.band || bandsOf(st).at(-1) }
     // Free text, e.g. a pyramid's per-set loading ("bar only, +1 plate/side each set") — the
     // sets/reps/weight fields are one flat target and have no room for that on their own.
     // Mode-independent, so it is spread in below rather than folded into `flags`.
@@ -1740,7 +1749,7 @@ function ExConfig({ ex, existing, onSave, onDelete, onReplace, close, routine, i
         range = normalizeRepRange(reps, c.repsMin, stride)
         reps = range.reps
       }
-      const out = { sets, mode: 'reps', reps, weight: Math.max(0, c.weight || 0), ...flags, ...(perSide ? { side: true } : {}), ...prog, ...withNote, ...withWarmups, ...withRest, ...withMeant }
+      const out = { sets, mode: 'reps', reps, weight: bandAssist ? 0 : Math.max(0, c.weight || 0), ...flags, ...(perSide ? { side: true } : {}), ...prog, ...withNote, ...withWarmups, ...withRest, ...withMeant }
       // The list is the prescription; sets and reps follow it, so everything that reads the
       // flat target (a config sheet reopened with the toggle off, older builds) still makes sense.
       const list = pyramid ? normalizePyramid(c.pyramid, stride) : []
@@ -1805,9 +1814,10 @@ function ExConfig({ ex, existing, onSave, onDelete, onReplace, close, routine, i
         {!ranged && !pyramid && <Stepper label={t('Reps')} value={c.reps} step={perSide ? 2 : 1} decimal={false} onChange={v => setC(x => ({ ...x, reps: v }))} />}
         {/* On bodyweight work the weight stepper is the click #32 is about, so it is not here
             until there is a belt to describe — see the added-weight row below. */}
-        {!bw && !pyramid && <Stepper label={t('Weight ({0})', st.unit)} value={c.weight} step={2.5} onChange={v => setC(x => ({ ...x, weight: v }))} />}
+        {!bw && !bandAssist && !pyramid && <Stepper label={t('Weight ({0})', st.unit)} value={c.weight} step={2.5} onChange={v => setC(x => ({ ...x, weight: v }))} />}
       </>}
     </div>
+    {bandAssist && <div style={{ marginBottom: 18 }}><BandPicker S={st} value={c.band || bandsOf(st).at(-1)} onChange={band => setC(x => ({ ...x, band, weight: 0 }))} /></div>}
     {/* Pyramid sets: a row per set, each with its own reps or Max, rest and weight. A set left
         at 0 weight starts from that same set last time (buildSets). */}
     {pyramid && <div style={{ marginTop: -10, marginBottom: 18 }}>
@@ -1896,6 +1906,9 @@ function ExConfig({ ex, existing, onSave, onDelete, onReplace, close, routine, i
     </div>
     {/* ---------- bodyweight + per side (issues #31/#32/#33) ---------- */}
     {!cardio && <div className="sect-b" style={{ marginBottom: 8 }}>
+      {mode === 'reps' && <Row title={t('Band assistance')} subtitle={t('Log assistance by band color instead of weight.')}>
+        <Switch checked={bandAssist} onChange={v => setC(x => ({ ...x, bandAssist: v, weight: 0, backoff: undefined }))} />
+      </Row>}
       <Row icon="figureStrength" iconTint="var(--acc)" title={t('Bodyweight')}
         subtitle={bw ? (mode === 'time' ? t('No weight to enter. Just time the hold.') : t('No weight to enter. Just log the reps.')) : t('Ask for a weight on every set.')}>
         <Switch checked={bw} onChange={v => setC(x => ({ ...x, bodyweight: v, weight: v ? 0 : x.weight }))} />
@@ -1936,7 +1949,7 @@ function ExConfig({ ex, existing, onSave, onDelete, onReplace, close, routine, i
     {/* A stepper is too wide to sit in a list row next to a label — it squeezes the text to
         one word per line — so added weight gets the same full-width treatment as sets and
         reps, with its explanation underneath. */}
-    {bw && <>
+    {bw && !bandAssist && <>
       <div className="row cfgrow" style={{ marginBottom: 8 }}>
         <Stepper label={t('Added ({0})', st.unit)} value={c.weight || 0} step={2.5}
           onChange={v => setC(x => ({ ...x, weight: v }))} />
@@ -1946,11 +1959,11 @@ function ExConfig({ ex, existing, onSave, onDelete, onReplace, close, routine, i
       </div>
     </>}
     {/* The rep ceiling only means something when there is no load to add instead. */}
-    {mode === 'reps' && bw && !(c.weight > 0) && <div className="row cfgrow" style={{ marginBottom: 18 }}>
+    {mode === 'reps' && bw && !bandAssist && !(c.weight > 0) && <div className="row cfgrow" style={{ marginBottom: 18 }}>
       <Stepper label={t('Top of the range')} value={c.repsMax || 0} step={1} decimal={false}
         onChange={v => setC(x => ({ ...x, repsMax: v }))} />
     </div>}
-    {mode === 'reps' && bw && !(c.weight > 0) && <div className="small dim" style={{ marginTop: -10, marginBottom: 18 }}>
+    {mode === 'reps' && bw && !bandAssist && !(c.weight > 0) && <div className="small dim" style={{ marginTop: -10, marginBottom: 18 }}>
       {c.repsMax > 0
         ? t('Reps climb to {0}, then a set is added and the reps start over. At {1} sets it asks you to add weight instead.', c.repsMax, MAX_BW_SETS)
         : t('Reps climb by one whenever every set was clean. Set a ceiling to add sets instead of reps forever.')}
@@ -2002,7 +2015,7 @@ function ExConfig({ ex, existing, onSave, onDelete, onReplace, close, routine, i
     </>}
     {/* How the weight is plate-loaded and what the bar weighs — per exercise, not per plan, so
         it sits apart from the config fields above and writes straight to S.barWeights/S.loadKind. */}
-    {mode === 'reps' && <>
+    {mode === 'reps' && !bandAssist && <>
       <h4 className="sec">{t('Plate loading')}</h4>
       <BarWeightEditor ex={ex} cfg={c} extra={t('Applies to this exercise everywhere, not just this plan.')} />
     </>}
@@ -2379,7 +2392,7 @@ function WorkoutDateEdit({ w, onDone, close }) {
     // It keeps its length, so the end it would have is what has to be in the past.
     if (endsInFuture(date, time, durationMinOf(w))) { toast(t('That’s still in the future. Try an earlier start.')); return }
     update(s => {
-      const next = moveWorkout(s.workouts, w, date, time)
+      const next = moveWorkout(s.workouts, w, date, time, Date.now(), s)
       if (next) s.workouts = next
     })
     close()
@@ -3378,6 +3391,12 @@ function doFinishWorkout() {
   // it outdoes loses its own. It used to report none at all while the editor's Save awarded them
   // (QA 1.3.9). The confirmed weights are left alone either way.
   if (!past) A.entries.forEach(e => {
+    if (isBandAssisted(e) || e.sets.some(s => s.band || s.sides?.L?.band || s.sides?.R?.band)) {
+      const current = bestBandSetForEntry(e, st)
+      const previous = bestSetFor(st, e.id, 'reps')?.set
+      if (current && compareBandSets(current, previous, st) > 0 && !prs.includes(e.id)) prs.push(e.id)
+      return
+    }
     const loads = e.sets.filter(s => s.done && !isWarmupRow(s)).map(s => s.w).filter(w => w > 0)
     const mx = loads.length ? loads.reduce((a, b) => betterWeight(e.id, a, b)) : 0
     // Held against history read the way this session logged a dumbbell weight (lib/dumbbells.js).
@@ -3401,7 +3420,7 @@ function doFinishWorkout() {
       stampWorkout(w)
       const replaced = A.backfill.replaceId ? s.workouts.find(x => x.id === A.backfill.replaceId) : null
       const touched = [...new Set([...(replaced?.entries || []), ...w.entries].map(e => e?.id).filter(id => id != null))]
-      s.workouts = rebuildPrHistory(completeBackfill(s.workouts, A, w), touched, w)
+      s.workouts = rebuildPrHistory(completeBackfill(s.workouts, A, w), touched, w, s)
       shown = s.workouts.find(x => x === w || (w.id != null && x.id === w.id)) || w
       prs.push(...[...(shown.prs || [])])
     } else {

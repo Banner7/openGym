@@ -81,6 +81,7 @@ function copiedEntry(entry, source) {
     const reps = row && isPerSide(cfg) ? perSideReps(row, cfg) : positive(row?.r)
     if (reps != null) cfg.reps = reps
     if (row) {
+      if (row.band) { cfg.band = row.band; cfg.weight = 0 }
       const weight = perSideWeight(row)
       if (weight != null) cfg.weight = weight
     }

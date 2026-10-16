@@ -49,9 +49,11 @@ export function buildPlannedEntry(stored, cfg, routine, { noProg = false } = {})
   const rows = backoffStep ? applyBackoff(built, backoffStep) : built
   const sets = applyIntensifierPlan(rows, cfg, dropGrid(st, cfg))
   const target = { ...cfg }
+  if (sets.some(s => s.band || s.sides?.L?.band || s.sides?.R?.band)) target.bandAssist = true
   // Stamped on the session, so the meaning it was logged with stays with it (dumbbells.js).
   if (meaning !== 'as') target.dbLoad = meaning
   if (plan.weight != null) target.weight = plan.weight
+  if (plan.band != null) { target.band = plan.band; target.weight = 0 }
   if (plan.reps != null) target.reps = plan.reps
   if (plan.sec != null) target.sec = plan.sec
   if (plan.sets != null) target.sets = plan.sets

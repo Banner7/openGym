@@ -1,4 +1,4 @@
-import { isAssisted } from './exercises.js'
+import { isAssisted, isBandAssisted } from './exercises.js'
 import { isSideSet } from './workout-model.js'
 import { entriesForExercise, metricRowsForEntry, workoutAt } from './history.js'
 import { currentDbLoad, entryDbLoad, workoutAs } from './dumbbells.js'
@@ -140,13 +140,14 @@ export function bestSetOf(entry, formula = DEFAULT_FORMULA) {
   // An assistance machine has no one-rep max to estimate: the load is the help you were given,
   // so Epley on it would rise as you got weaker and call that a record (issue #232). These
   // exercises stay out of the estimate, the curve and the strength list entirely.
-  if (isAssisted(entry?.id ? { id: entry.id } : entry)) return null
+  if (isAssisted(entry?.id ? { id: entry.id } : entry) || isBandAssisted(entry)) return null
   let best = null
   metricRowsForEntry(entry, 'reps').forEach(s => {
     const sets = isSideSet(s)
       ? [s.sides.L, s.sides.R].filter(side => side?.done === true)
       : [s]
     sets.forEach(set => {
+      if (set.band) return
       const est = estimate1RM(set.w, set.r, formula, set.rir ?? null)
       if (est !== null && (!best || est > best.est)) best = { est, w: Number(set.w), r: Math.round(Number(set.r)) }
     })
@@ -168,7 +169,7 @@ function bestSetOfEntries(entries, formula = DEFAULT_FORMULA) {
 // `as` is the meaning a dumbbell weight is read in (lib/dumbbells.js): the exercise's own by
 // default, so a session logged as "40 total" sits on the same curve as one logged as "20 each".
 export function e1rmSeries(S, exId, formula = formulaOf(S), as = currentDbLoad(S, exId)) {
-  if (isAssisted(exId)) return []
+  if (isAssisted(exId) || isBandAssisted(exId)) return []
   const pts = []
   ;(S.workouts || []).forEach(w => {
     const best = bestSetOfEntries(entriesForExercise(workoutAs(w, exId, as), exId), formula)

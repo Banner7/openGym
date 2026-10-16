@@ -9,6 +9,7 @@
 import { entriesForExercise, completedRepsOf, workoutAt } from './history.js'
 import { phaseForSet, modeForSet, hasCompletedWork, isSideSet } from './workout-model.js'
 import { estimate1RM } from './onerm.js'
+import { isBandAssisted } from './exercises.js'
 
 export const PER_SET_MAX = 5
 
@@ -28,10 +29,12 @@ export function perSetSessions(workouts, exId, { metric = 'weight', formula } = 
     const sets = []
     for (const entry of entriesForExercise(w, exId)) {
       const target = entry.target || entry
+      if (metric !== 'reps' && isBandAssisted(entry)) continue
       for (const set of Array.isArray(entry.sets) ? entry.sets : []) {
         if (phaseForSet(set) !== 'work' || modeForSet(set, target) !== 'reps') continue
         n++
         if (!hasCompletedWork(set)) continue
+        if (metric !== 'reps' && (set.band || set.sides?.L?.band || set.sides?.R?.band)) continue
         const wt = weightOf(set), r = completedRepsOf(set)
         const perSide = isSideSet(set) ? r / doneSides(set).length : r
         const y = metric === 'reps' ? r : metric === 'e1rm' ? estimate1RM(wt, perSide, formula, set.rir ?? null) || 0 : wt

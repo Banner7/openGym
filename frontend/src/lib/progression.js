@@ -17,7 +17,7 @@
 // So a session that fell apart can never advance the load as though it had succeeded.
 
 import { modeOf, repStep, rerampWarmups, isBw, isPerSide, entryExcluded, entryRoutineId } from './history.js'
-import { EXIDX, isAssisted, isLoadedEq, defaultIncrement } from './exercises.js'
+import { EXIDX, isAssisted, isBandAssisted, bandsOf, isLoadedEq, defaultIncrement } from './exercises.js'
 import { isWarmupRow, isSideSet, syncSideAggregate, makeSideSet } from './workout-model.js'
 import { normalizeRepRange } from './rep-range.js'
 import { isPyramid } from './pyramid.js'
@@ -224,6 +224,7 @@ export function plannedOf(cfg) {
   // Triple progression's set ceiling is part of the plan: raising it changes where a cycle ends.
   if (mode === 'reps' && c.setsMax > 0) out.setsMax = c.setsMax
   if (c.weight != null) out.weight = c.weight
+  if (isBandAssisted(c)) { out.bandAssist = true; if (c.band) out.band = c.band }
   return out
 }
 // Work with no load to enter climbs in reps, then sets, when it is logged at 0: a bodyweight
@@ -233,7 +234,7 @@ export function plannedOf(cfg) {
 // progression leads (issue #232), and from there the work is a plain pull-up or dip.
 const climbsReps = cfg => isBw(cfg) || !isLoadedEq(cfg.id) || isAssisted(cfg)
 
-const PLAN_KEYS = ['sets', 'reps', 'repsMin', 'sec', 'setsMax']
+const PLAN_KEYS = ['sets', 'reps', 'repsMin', 'sec', 'setsMax', 'band', 'bandAssist']
 const samePlan = (a, b) => PLAN_KEYS.every(k => (a[k] ?? null) === (b[k] ?? null))
 /** Did the routine's sets or reps change since the session that stamped `planned`? */
 export function planChanged(planned, cfg) {
@@ -311,6 +312,7 @@ export function readSession(entry, fallback) {
   const reps = sets.map((s, k) => (s.done && heavyEnough(s, k) ? (s.r || 0) : 0))
   return {
     mode, target, goal, reps,
+    bands: sets.flatMap(s => isSideSet(s) ? [s.sides.L, s.sides.R].map(side => side.done ? side.band : null) : [s.done ? s.band : null]),
     weight: loadOf(entry, sets),
     count: reps.length,                                   // the dimension bodyweight work grows (#33)
     low: reps.length ? Math.min(...reps) : 0,
@@ -472,6 +474,7 @@ export function nextPrescription(S, cfg, routine) {
   // routine has none yet (issue #216) — see sessionsFor.
   const sessions = sessionsFor(S, cfg.id, cfg, routine?.id).filter(s => s.mode === mode)
   const last = sessions[sessions.length - 1]
+  if (mode === 'reps' && isBandAssisted(cfg)) return bandPrescription(S, cfg, routine, policy, last)
   // Triple progression starts a cycle at the base sets and the bottom of the range, so its first
   // session does too; the weight is still the plan's.
   const triple = policy === 'triple' && mode === 'reps'
@@ -744,6 +747,53 @@ export function nextPrescription(S, cfg, routine) {
   return { policy, kind: 'hold', weight: w, why: ['Missed reps last time. Same weight again ({0} of {1} to go).', deloadAt - stalls, deloadAt] }
 }
 
+function bandPrescription(S, cfg, routine, policy, last) {
+  const bands = bandsOf(S)
+  const triple = policy === 'triple'
+  const range = normalizeRepRange(cfg.reps || 10, cfg.repsMin, repStep(cfg))
+  const { setsMin, setsMax } = tripleSetsOf(cfg)
+  const initial = cfg.band || bands.at(-1)
+  const out = (kind, band, reps, why, rows) => ({ policy, kind, weight: 0, band, reps, why,
+    ...(rows ? { sets: rows.length, rowReps: rows } : {}) })
+  const fresh = !last || (last.planned ? planChanged(last.planned, cfg) : !!routine?.id && last.rid !== routine.id)
+  if (fresh) return out('first', initial, policy === 'double' || triple ? range.repsMin : cfg.reps,
+    ['Band assistance: start from the prescribed band.'], triple ? Array(setsMin).fill(range.repsMin) : undefined)
+  const indices = (last.bands || []).map(band => bands.indexOf(band))
+  const known = indices.length > 0 && indices.every(i => i >= 0)
+  const index = known ? Math.max(...indices) : bands.indexOf(last.target?.band || initial)
+  const band = bands[index] || initial
+  const rows = triple ? tripleRowsOf(last, setsMin, setsMax, range) : null
+  const goal = last.goal || cfg.reps || range.reps
+  if (!known || !last.ok) return out('hold', band, goal,
+    ['Band assistance: same band until every work set meets its rep target.'], rows)
+  // At the hardest band, keep building reps rather than prescribing a colour that does not exist.
+  if (index === 0) return out('up', band, goal + repStep(cfg),
+    ['Least assistance already. Keep this band and aim for {0} reps.', goal + repStep(cfg)],
+    rows ? rows.map(r => r + repStep(cfg)) : undefined)
+  if (triple) {
+    const got = rows.map((r, k) => Math.min(range.reps, Math.max(r, last.reps[k] || 0)))
+    const n = got.length
+    const low = Math.min(...got.slice(0, Math.min(n, setsMin)))
+    if (n <= setsMin && low < range.reps) {
+      const aim = Math.min(range.reps, low + repStep(cfg))
+      return out('hold', band, aim, ['Same band, aim for {0} reps in every set.', aim], Array(Math.max(n, setsMin)).fill(aim))
+    }
+    if (n > setsMin && got[n - 1] < range.reps) {
+      const aim = Math.min(range.reps, got[n - 1] + repStep(cfg))
+      return out('hold', band, range.reps, ['Same band, aim for {0} reps on the last set.', aim], [...got.slice(0, -1).map(() => range.reps), aim])
+    }
+    if (n < setsMax) return out('up', band, range.reps,
+      ['Same band. Add a set at {0} reps.', range.repsMin], [...got.map(() => range.reps), range.repsMin])
+  } else if (policy === 'double' && last.low < range.reps) {
+    const aim = Math.min(range.reps, Math.max(range.repsMin, last.low + repStep(cfg)))
+    return out('hold', band, aim, ['Same band, aim for {0} reps this time.', aim])
+  }
+  const reps = policy === 'double' || triple ? range.repsMin : cfg.reps
+  return out('up', bands[index - 1], reps,
+    ['Every target met. Move one band toward less assistance and start again at {0} reps.', reps],
+    triple ? Array(setsMin).fill(reps) : undefined)
+}
+
 /**
  * Apply a prescription to freshly built sets. Only the fields the policy actually decided
  * are touched, and only on sets that have not been logged yet. `floor` is the lift's bar
@@ -751,7 +801,7 @@ export function nextPrescription(S, cfg, routine) {
  */
 export function applyPrescription(sets, p, step = 2.5, floor = 0) {
   // A first session has nothing to prescribe from, except triple progression's start of a cycle.
-  if (!p || p.kind === 'off' || (p.kind === 'first' && !p.rowReps)) return sets
+  if (!p || p.kind === 'off' || (p.kind === 'first' && !p.rowReps && !p.band)) return sets
   const out = sets.map(s => {
     // Never rewrite a logged set (a ticked warm-up falling through here would be the data-loss
     // the cascade fix removed, two files over). The prescription speaks to the work rows; an
@@ -768,6 +818,7 @@ export function applyPrescription(sets, p, step = 2.5, floor = 0) {
         const row = s.sides[side]
         return [side, row.done ? row : { ...row,
           ...(p.weight != null ? { w: p.weight } : {}),
+          ...(p.band != null ? { band: p.band, w: 0 } : {}),
           ...(p.reps != null ? { r: p.reps / 2 } : {}),
         }]
       }))
@@ -775,6 +826,7 @@ export function applyPrescription(sets, p, step = 2.5, floor = 0) {
     }
     const o = { ...s }
     if (p.weight != null) o.w = p.weight
+    if (p.band != null) { o.band = p.band; o.w = 0 }
     if (p.reps != null) o.r = p.reps
     if (p.sec != null) o.sec = p.sec
     return o
@@ -795,7 +847,7 @@ export function applyPrescription(sets, p, step = 2.5, floor = 0) {
     const { drops, clusters, ...plainSeed } = seed
     while (out.filter(s => !isWarmupRow(s)).length < p.sets) {
       out.push(isSideSet(seed) ? makeSideSet({
-        w: p.weight ?? seed.w, r: p.reps ?? seed.r,
+        w: p.weight ?? seed.w, r: p.reps ?? seed.r, band: p.band ?? seed.band,
       }) : { ...plainSeed, done: false })
     }
   }

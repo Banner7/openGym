@@ -1,4 +1,4 @@
-import { EXIDX, isAssisted } from './exercises.js'
+import { EXIDX, isAssisted, isBandAssisted } from './exercises.js'
 import { workoutAt } from './history.js'
 import { MUSCLES, musclesOf } from './muscles.js'
 import { isWarmupRow, dropsOf, isSideSet } from './workout-model.js'
@@ -293,12 +293,13 @@ function sessionBests(workout, opts = {}) {
     if (set?.done !== true) return
     const sides = isSideSet(set) ? [set.sides.L, set.sides.R].filter(s => s?.done === true) : [set]
     for (const side of sides) {
+      if (side.band) continue
       const est = estimate1RM(loadKgFor(ex, entry, set, workout, opts, side), numeric(side?.r))
       if (est !== null && (!best.has(exId) || est > best.get(exId))) best.set(exId, est)
     }
   }
   for (const entry of workout?.entries || []) {
-    if (isAssisted(entry?.id ? { id: entry.id } : entry)) continue
+    if (isAssisted(entry?.id ? { id: entry.id } : entry) || isBandAssisted(entry)) continue
     const ex = exerciseFor(entry)
     for (const set of entry.sets || []) consider(ex, set, entry, entry.id)
   }
@@ -348,6 +349,7 @@ export function anchorsByWorkout(workouts, opts = {}) {
 export function resolveSetRir(row, set, entry, workout, anchors, opts = {}) {
   const logged = rirOf(row)
   if (logged != null) return { rir: logged, source: 'logged' }
+  if (row?.band || isBandAssisted(entry)) return null
   const anchor = anchors?.get(entry?.id)
   if (!(anchor > 0)) return null
   // Same load rule as the anchor: canonical kg, body mass included for bodyweight work.

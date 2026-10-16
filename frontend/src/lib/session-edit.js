@@ -159,7 +159,7 @@ export function saveWorkoutEdit(state, now = Date.now()) {
   // leads with, and a later one loses its own if the edit raised the bar above it — the same
   // asymmetric rule a date move follows, so imported history never sprouts trophies.
   const touched = [...new Set([...list(current.entries), ...record.entries].map(e => e?.id).filter(id => id != null))]
-  state.workouts = rebuildPrHistory(state.workouts, touched, record)
+  state.workouts = rebuildPrHistory(state.workouts, touched, record, state)
   const saved = state.workouts.find(w => keyOf(w) === key)
   lowerKeptWeights(state, touched, current, saved)
   state.active = null

@@ -10,7 +10,7 @@
 //
 // Imports nothing from history.js or progression.js — both import this module.
 import { isWarmupRow, isSideSet, syncSideAggregate } from './workout-model.js'
-import { defaultIncrement, isAssisted } from './exercises.js'
+import { defaultIncrement, isAssisted, isBandAssisted } from './exercises.js'
 
 const round1 = v => Math.round(v * 10) / 10
 
@@ -43,7 +43,7 @@ export function backoffAt(top, k, step) {
  *  number progression.js's weightIncrement gives, and 0 where back-off sets do not apply. An
  *  assistance machine is left out: less load is harder there, so "lighter" is the wrong way. */
 export function backoffStepOf(cfg, unit) {
-  if (!isBackoff(cfg) || isAssisted(cfg)) return 0
+  if (!isBackoff(cfg) || isAssisted(cfg) || isBandAssisted(cfg)) return 0
   return cfg.inc > 0 ? cfg.inc : defaultIncrement(cfg.id, unit)
 }
 

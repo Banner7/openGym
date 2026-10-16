@@ -76,6 +76,7 @@ export function clustersOf(set) {
  */
 export function extraVolumeOf(set) {
   const source = objectOf(set)
+  if (source.band) return 0
   // A per-side set carries its drops on each side (issue #60), so the extra volume is the sum of
   // both sides' drops — the row itself has no `drops`. dropsOf reads a side's own {type,drops}.
   if (isSideSet(source)) {
@@ -203,13 +204,14 @@ export const hasCompletedWork = set => isSideSet(set)
 /** Actual completed load x reps; the scalar maximum weight is only a summary. */
 export function completedVolumeOf(set) {
   if (isSideSet(set)) return completedVolumeOf(set.sides.L) + completedVolumeOf(set.sides.R)
-  if (!set?.done) return 0
+  if (!set?.done || set.band) return 0
   return (Number(set.w) || 0) * (Number(set.r) || 0) + extraVolumeOf(set)
 }
 
 const sideOf = value => {
   const v = objectOf(value)
   const out = { w: Number(v.w) || 0, r: Number(v.r) || 0, done: v.done === true }
+  if (typeof v.band === 'string') { out.band = v.band; out.w = 0 }
   if (v.rir != null) out.rir = v.rir
   if (v.rpe != null) out.rpe = v.rpe
   if (v.weightOrigin === WEIGHT_ORIGIN_MANUAL) out.weightOrigin = WEIGHT_ORIGIN_MANUAL
@@ -228,7 +230,7 @@ export function makeSideSet(row = {}) {
   const base = objectOf(row)
   const half = Math.round((Number(base.r) || 0) / 2)
   const w = Number(base.w) || 0
-  const side = () => ({ w, r: half, done: false })
+  const side = () => ({ w: base.band ? 0 : w, r: half, ...(base.band ? { band: base.band } : {}), done: false })
   const next = { ...base, sides: { L: side(), R: side() } }
   // effort/done/reps on the parent become derived — drop any straight-set leftovers so the row
   // carries one source of truth, then recompute the aggregate.
@@ -244,6 +246,8 @@ export function syncSideAggregate(row) {
   const L = sideOf(base.sides.L)
   const R = sideOf(base.sides.R)
   const out = { ...base, sides: { L, R }, r: L.r + R.r, w: Math.max(L.w, R.w), done: L.done && R.done }
+  if (L.band && L.band === R.band) out.band = L.band
+  else delete out.band
   // The row's effort tail shows the harder side: fewer reps in reserve (lower RIR) or a higher RPE.
   // Only one scale is ever in play, matching how a straight row carries rir XOR rpe.
   delete out.rir; delete out.rpe

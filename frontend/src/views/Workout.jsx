@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { workoutControls } from '../lib/workout-controls.js'
 import { useUI } from '../store/useUI.js'
-import { exOr, betterWeight } from '../lib/exercises.js'
+import { exOr, betterWeight, isBandAssisted } from '../lib/exercises.js'
 import { usesBar } from '../lib/bar.js'
 import { loadKindFor, baseWeightFor, inventoryFor, rowLoad, sameLoad, plateDelta, dropGrid } from '../lib/plates.js'
 import { effectiveRoutines, effectiveRoutineIds, lastEntryFor, bestWeightFor, bestWeightForEntry, buildSets, freestyleConfig, defaultConfig, setsDoneActive, setUnitsTotal, supersetUnits, unitOf, setLabel, modeOf, isBw, isPerSide, repStep, EFFORT, effortOf, stepEffort, capEffort, cascadeWeight, insertWarmupRow, barFloor, makeWarmupAt, canBeWarmup, makeWorkAt, removeRowAt, removeLastSet, setSpanAt, copyRowAt, copySpanAt, insertRowAt, pairAdjacent, unpairSuperset, cleanupSg, applyIntensifierPlan, pinnedNoteFor, exNoteFor, setsRepsOf } from '../lib/history.js'
@@ -33,6 +33,7 @@ import { effortColor } from '../lib/effort.js'
 import Elapsed from '../components/Elapsed.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button, Check, NumberField } from '../components/ui.jsx'
+import BandPicker from '../components/BandPicker.jsx'
 import { defaultIncrement, weightIncrement, stepWeight } from '../lib/progression.js'
 import { progressionGuidance } from '../lib/progression-copy.js'
 import { buildPlannedEntry, plannedConfigOf, builtOutOfProgression } from '../lib/session-start.js'
@@ -203,7 +204,7 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
   const meaning = entryDbLoad(entry)
   const bestHist = bestWeightFor(H, entry.id, meaning)
   const bestKept = (H.exWeights[entry.id] || {}).w || 0
-  const best = cardio ? 0
+  const best = cardio || isBandAssisted(entry) ? 0
     : bestHist > 0 && bestKept > 0 ? betterWeight(entry.id, bestHist, bestKept) : Math.max(bestHist, bestKept)
   // What the progression policy decided for this session, and why (issue #17). Computed when
   // the session was built so the reason matches the numbers already in the rows.
@@ -264,6 +265,7 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
   // later, or return to zero without losing its load control (issue #460).
   const cfg = { ...(entry.target || {}), id: entry.id }
   const bw = !cardio && isBw(cfg)
+  const bandAssist = mode === 'reps' && isBandAssisted(cfg)
   // A unilateral exercise logs each side on its own (issue #60): work rows render as an L and an
   // R sub-row, each with its own weight/reps/effort and done tick. Warm-ups stay single.
   const perSide = mode === 'reps' && isPerSide(cfg)
@@ -275,8 +277,9 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
   // The weight column says what a dumbbell weight means when the exercise has said (#474): one
   // bell or both together. A one-arm exercise holds one bell, so its plain heading is already true.
   const bells = !bw && bellsIn(cfg) === 2 ? meaning : 'as'
-  const loadCol = { f: 'w', step: loadStep, dec: true, hd: bw ? t('Added ({0})', S.unit)
-    : bells === 'each' ? t('Each ({0})', S.unit) : bells === 'total' ? t('Both ({0})', S.unit) : t('Weight ({0})', S.unit) }
+  const loadCol = bandAssist ? { f: 'band', hd: t('Band') }
+    : { f: 'w', step: loadStep, dec: true, hd: bw ? t('Added ({0})', S.unit)
+      : bells === 'each' ? t('Each ({0})', S.unit) : bells === 'total' ? t('Both ({0})', S.unit) : t('Weight ({0})', S.unit) }
   // The reps column is the total in every mode, unilateral included — the stepper walks in
   // twos there so the number you land on is one you can actually split evenly.
   const repCol = { f: 'r', step: repStep(cfg), dec: false, hd: t('Reps') }
@@ -324,7 +327,7 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
   // workout → Workout controls). The lean default keeps the sets and one "more" button; each
   // switch brings one of the old always-visible button rows back.
   const wc = workoutControls(S)
-  const cell = (s, i, col, cls) => (
+  const cell = (s, i, col, cls) => col.f === 'band' ? <BandPicker S={S} value={s.band} onChange={v => onField(i, 'band', v)} /> : (
     <div className={'stp ' + cls + (wc.steppers ? '' : ' plain')}>
       {wc.steppers && <button aria-label={t('Decrease')} onClick={() => bump(s, i, col, -1)}><Icon name="minus" /></button>}
       <span className="val" style={cardio && col.f === 'm' ? { display: 'flex', flexDirection: 'column' } : undefined}><NumberField decimal={col.dec} nullable={col.opt} value={viewOf(col, s[col.f]) ?? ''}
@@ -512,7 +515,7 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
     const step = col.f === 'r' ? 1 : col.step
     setSide(i, side, col.f, Math.max(0, Math.round(((cur || 0) + dir * step) * 100) / 100))
   }
-  const sideCell = (sd, i, side, col, cls) => (
+  const sideCell = (sd, i, side, col, cls) => col.f === 'band' ? <BandPicker S={S} value={sd.band} onChange={v => setSide(i, side, 'band', v)} /> : (
     <div className={'stp ' + cls + (wc.steppers ? '' : ' plain')}>
       {wc.steppers && <button aria-label={t('Decrease')} onClick={() => sideBump(i, side, col, -1)}><Icon name="minus" /></button>}
       <span className="val"><NumberField decimal={col.dec} value={sd[col.f] ?? ''}
@@ -1136,6 +1139,7 @@ function ActiveWorkout() {
   // what was actually logged — in the session, in history and in a backup.
   const setField = (idx, i, field, v) => mutEntry(idx, e => {
     if (v == null) delete e.sets[i][field]; else e.sets[i][field] = v
+    if (field === 'band') e.sets[i].w = 0
     // Typing a duration IS the new plan, the same way ticking the row ends it: a plan a displaced
     // hold put aside must not outrank what you just typed, or the field would read 45 and the ▶
     // would still hold the 30 the row was asking for before.
@@ -1164,11 +1168,12 @@ function ActiveWorkout() {
     else {
       // An extra set past a pyramid copies the last one's target, Max included.
       const row = { w: l ? l.w : 0, r: l ? l.r : e.target.reps, done: false, ...(l && l.max ? { max: true } : {}) }
+      if (isBandAssisted(e)) { row.w = 0; row.band = l?.band || e.target?.band }
       // A unilateral exercise keeps adding per-side rows (issue #60): seed each side from the
       // previous set's own side when it had one, else split the row's total evenly.
       e.sets.push(isPerSide({ ...(e.target || {}), id: e.id })
         ? (l && isSideSet(l)
-          ? makeSideSet({ w: l.sides.L.w, r: (l.sides.L.r || 0) * 2 })
+          ? makeSideSet({ w: l.sides.L.w, r: (l.sides.L.r || 0) * 2, band: l.sides.L.band })
           : makeSideSet(row))
         : row)
     }

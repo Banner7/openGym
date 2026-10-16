@@ -9,8 +9,9 @@
 // existed) so the date arithmetic and the badge surgery are testable without the UI.
 import { insertChronological, backfillStart } from './backfill.js'
 import { bestWeightForEntry } from './history.js'
-import { beatsWeight } from './exercises.js'
+import { beatsWeight, isBandAssisted, compareBandSets } from './exercises.js'
 import { stampWorkout } from './sync-merge.js'
+import { bestBandSetForEntry } from './exercise-history.js'
 
 // Before ids existed a workout was keyed for sync by its day and start time
 // (`workoutKey` in sync-merge.js). That is exactly what this edit changes, so moving such a
@@ -57,10 +58,11 @@ export function retimeWorkout(w, iso, time) {
 // correction; handing out new ones is an invention.
 //
 // Only `exerciseIds` are reconsidered — every other badge in history is left exactly as it was.
-export function rebuildPrHistory(workouts, exerciseIds, moved = null) {
+export function rebuildPrHistory(workouts, exerciseIds, moved = null, S) {
   const ids = new Set(exerciseIds || [])
   if (!ids.size) return workouts
   const best = new Map()
+  const bestBands = new Map()
   return workouts.map(w => {
     const had = w.prs || []
     const kept = []
@@ -68,6 +70,13 @@ export function rebuildPrHistory(workouts, exerciseIds, moved = null) {
     for (const e of w.entries || []) {
       if (!ids.has(e.id)) continue
       trains = true
+      if (isBandAssisted(e) || e.sets?.some(s => s.band || s.sides?.L?.band || s.sides?.R?.band)) {
+        const top = bestBandSetForEntry(e, S)
+        const leads = top && compareBandSets(top, bestBands.get(e.id), S) > 0
+        if (leads) bestBands.set(e.id, top)
+        if (leads && (w === moved || had.includes(e.id))) kept.push(e.id)
+        continue
+      }
       const top = bestWeightForEntry(e)
       // Leads everything dated before it. The running best grows whether or not a badge is
       // written, so a session that cannot gain one still raises the bar for the next. "Leads"
@@ -91,13 +100,13 @@ export function rebuildPrHistory(workouts, exerciseIds, moved = null) {
 // The moved workout carries the time of the move (stampWorkout): a conflict with a copy that
 // still holds it where it was keeps the version edited last, not whichever copy is newer as a
 // whole — a phone that logged a weigh-in since would otherwise put it back.
-export function moveWorkout(workouts, ref, iso, time, now = Date.now()) {
+export function moveWorkout(workouts, ref, iso, time, now = Date.now(), S) {
   const list = Array.isArray(workouts) ? workouts : []
   const current = list.find(w => sameWorkout(w, ref))
   if (!current) return null
   const moved = stampWorkout(retimeWorkout(current, iso, time), now)
   const filed = insertChronological(list.filter(w => w !== current), moved)
-  return rebuildPrHistory(filed, (current.entries || []).map(e => e.id), moved)
+  return rebuildPrHistory(filed, (current.entries || []).map(e => e.id), moved, S)
 }
 
 // The longest a session can be said to have run: a day. Past that it is a typo (99999 read as
