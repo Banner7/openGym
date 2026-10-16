@@ -298,7 +298,7 @@ export default function FocusView({
               max={col.f === 'level' ? 40 : undefined} disabled={readOnly}
               onChange={value => onField(setIdx, col.f, col.store ? col.store(value) : value)} />)}
             {isRower(entry) && rowingPace(set) && <div className="focus-badge">{rowingPace(set)}</div>}
-            {machineCols.some(c => c.f === 'speed') && (inclineFits(ex) || entry.sets.some(hasIncline)) && <Stepper label={t('Incline (%)')} ariaLabel="incline" value={set.incline || 0} step={INCLINE_STEP} max={INCLINE_MAX} disabled={readOnly}
+            {((machineCols.some(c => c.f === 'speed') && inclineFits(ex)) || entry.sets.some(hasIncline)) && <Stepper label={t('Incline (%)')} ariaLabel="incline" value={set.incline || 0} step={INCLINE_STEP} max={INCLINE_MAX} disabled={readOnly}
               onChange={value => onField(setIdx, 'incline', clampIncline(value))} />}
           </> : <>
             <Stepper label={t('Load ({0})', S.unit)} ariaLabel="load" value={set.w || 0} step={loadStep} onStep={stepLoad} disabled={readOnly}

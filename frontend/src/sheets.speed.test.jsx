@@ -13,7 +13,7 @@ const mounted = []
 function open(settings, existing) {
   useStore.setState({ S: { ...structuredClone(DEF), ...settings }, user: null })
   const onSave = vi.fn()
-  exConfigSheet(EXIDX['2138'], existing, onSave, null, null)
+  exConfigSheet(EXIDX['2259'], existing, onSave, null, null)
   const sheet = useUI.getState().sheets.at(-1)
   const host = document.createElement('div')
   document.body.appendChild(host)

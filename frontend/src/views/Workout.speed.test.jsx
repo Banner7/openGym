@@ -12,7 +12,7 @@ vi.mock('../lib/sound.js', () => ({ beep: vi.fn(), vibrate: vi.fn(), alertBuzz: 
 vi.mock('../lib/api.js', () => ({ api: vi.fn(() => Promise.resolve({})) }))
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
-const BIKE = '2138'   // stationary bike, cardio
+const TREADMILL = '2259'   // walking on treadmill, speed-based cardio
 let root, container
 
 function mount(settings = {}) {
@@ -20,7 +20,7 @@ function mount(settings = {}) {
   const S = { ...JSON.parse(JSON.stringify(DEF)), ...settings }
   S.active = {
     id: 'speed-test', d: '2026-09-23', start: Date.now(), routineId: null, name: 'Cardio', bw: null, cur: 0,
-    entries: [{ id: BIKE, target: { sets: 1, min: 20, speed: 8 }, sets: [{ min: 20, speed: 8, done: false }] }],
+    entries: [{ id: TREADMILL, target: { sets: 1, min: 20, speed: 8 }, sets: [{ min: 20, speed: 8, done: false }] }],
   }
   useStore.setState({ S, user: null })
   container = document.createElement('div')
@@ -88,7 +88,7 @@ describe('cardio speed in the set row', () => {
 // it holds the last time or the best set (#173).
 describe('the reference line in mph', () => {
   const past = { id: 'w0', d: '2026-09-20', start: Date.now() - 3 * 86400000, end: Date.now() - 3 * 86400000 + 1800000, name: 'Cardio',
-    entries: [{ id: BIKE, target: { mode: 'cardio', sets: 1, min: 20, speed: 16.09344 }, sets: [{ min: 20, speed: 16.09344, done: true }] }] }
+    entries: [{ id: TREADMILL, target: { mode: 'cardio', sets: 1, min: 20, speed: 16.09344 }, sets: [{ min: 20, speed: 16.09344, done: true }] }] }
   const refText = () => container.querySelector('.refline')?.textContent || ''
 
   it('shows last time and the best set in mph for a profile in pounds', () => {
