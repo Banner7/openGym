@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
-import { EXIDX, matchExercise, betterWeight, isAssisted } from '../lib/exercises.js'
+import { EXIDX, matchExercise, betterWeight, isAssisted, isBandAssisted, bandsOf, bandName } from '../lib/exercises.js'
 import { lastBW, streakWeeks, setLabel, modeOf, effortOf, entriesForExercise, metricEntriesForExercise, metricModeForEntry, bestWeightForEntry, completedRepsOf, workoutDay, workoutAt } from '../lib/history.js'
 import { fmtNum, fmtDate, fmtVol, todayISO, isoOf, weekKey, weekStartOf, exerciseNameText } from '../lib/format.js'
 import { speedUnitOf, speedLabel, toSpeed } from '../lib/speed.js'
@@ -19,6 +19,7 @@ import { e1rmSeries, best1RM, formulaOf } from '../lib/onerm.js'
 import { currentDbLoad, workoutAs } from '../lib/dumbbells.js'
 import { maxRepsSeries } from '../lib/pyramid.js'
 import { perSetSessions, perSetLines, dropOffSet } from '../lib/per-set.js'
+import { exerciseHistory, bestBandSetForEntry } from '../lib/exercise-history.js'
 import {
   hasEffort, hasEstimableEffort, displayScale, scaleName, toScale, avgRir, effortSummary, effortWeeks,
   effortHistogram, isHardSet, HARD_RIR, MIN_RATED
@@ -488,6 +489,10 @@ export default function Stats() {
       if (!data.mode) continue
       const mode = data.mode
       const rows = data.rows
+      if (mode === 'reps' && data.entries.some(item => isBandAssisted(item.entry) || item.rows.some(s => s.band || s.sides?.L?.band || s.sides?.R?.band))) {
+        const set = bestBandSetForEntry({ ...data.entries.at(-1).entry, sets: rows }, S)
+        return { mx: set ? bandsOf(S).length - bandsOf(S).indexOf(set.band) : 0, unit: set ? bandName(set.band) : t('Band'), band: true }
+      }
       const mx = mode === 'reps'
         ? data.best
         : Math.max(0, ...rows.map(s => mode === 'cardio' ? toSpeed(s.speed || 0, speedUnit) : mode === 'time' ? (s.sec || 0) : (s.w || 0)))
@@ -521,6 +526,9 @@ export default function Stats() {
   })() : 'reps'
   const curCardio = curMode === 'cardio'
   const curTimed = curMode === 'time'
+  const bandHistory = curEx && curMode === 'reps' ? exerciseHistory(S, curEx, { limit: 5 }) : null
+  const curBand = bandHistory?.metric === 'band'
+  const bandLabel = v => Number.isInteger(v) ? bandName(bandsOf(S)[bandsOf(S).length - v]) : ''
   // A pull-up or a push-up carries no weight, so its "best weight" is 0 — and dropping every
   // zero point left the card reading "No data yet" for exercises with a full history behind
   // them (issue #5). When nothing in an exercise's history was ever loaded, the progress IS
@@ -529,7 +537,7 @@ export default function Stats() {
   const repsOnly = curEx && curMode === 'reps' && !workouts.some(w =>
     entriesForExercise(w, curEx).some(en => bestWeightForEntry(en) > 0))
   const metric = s => curCardio ? toSpeed(s.speed || 0, speedUnit) : curTimed ? (s.sec || 0) : (s.w || 0)
-  const exUnit = curCardio ? speedLabel(speedUnit) : curTimed ? 's' : repsOnly ? t('reps') : S.unit
+  const exUnit = curBand ? '' : curCardio ? speedLabel(speedUnit) : curTimed ? 's' : repsOnly ? t('reps') : S.unit
   let exPts = [], exList = [], exBest = 0
   if (curEx) {
     workouts.forEach(w => {
@@ -550,6 +558,11 @@ export default function Stats() {
       }
     })
     exList = exPts.slice(-5).reverse()
+  }
+  if (curBand) {
+    exPts = bandHistory.points
+    exList = bandHistory.sessions.filter(s => s.value != null).map(s => ({ ...s, y: s.value }))
+    exBest = bandHistory.best
   }
   // Estimated 1RM (issue #18) — only reps-mode training produces one, so cardio and timed
   // work simply have no points and the toggle stays hidden.
@@ -587,7 +600,7 @@ export default function Stats() {
   // reads backwards), or a history of sets all past the estimate's rep cap.
   const oneRmFormula = formulaOf(S)
   const perSet = useMemo(() => {
-    if (!curEx || curMode !== 'reps') return null
+    if (!curEx || curMode !== 'reps' || curBand) return null
     const usable = list => list.length >= 2 && list.some(s => s.sets.length >= 2)
     let metric = repsOnly || isAssisted(curEx) ? 'reps' : 'e1rm'
     let sessions = perSetSessions(workouts, curEx, { metric, formula: oneRmFormula })
@@ -606,7 +619,7 @@ export default function Stats() {
       metric,
       drop: dropOffSet(sessions),
     }
-  }, [workouts, curEx, curMode, repsOnly, oneRmFormula])
+  }, [workouts, curEx, curMode, curBand, repsOnly, oneRmFormula])
   // The same sessions cut to the range; a set number with nothing left in it drops out of the legend.
   const perSetChart = useMemo(() => {
     if (!perSet) return null
@@ -621,7 +634,7 @@ export default function Stats() {
     t: p.t, y: p.y, d: p.d,
     // 0 RIR (nothing left) is a full dot, 4+ a faint one; unrated sessions keep the plain line.
     m: exRir[i] == null ? null : 1 - Math.min(4, Math.max(0, exRir[i])) / 4,
-    note: exRir[i] == null ? undefined : hd + ' ' + fmtNum(toScale(kind, exRir[i]))
+    note: p.note || (exRir[i] == null ? undefined : hd + ' ' + fmtNum(toScale(kind, exRir[i])))
   })).filter(inExRange)
   const chartPts = onSets ? perSetChart.anchors : onMax ? maxChartPts : onEff ? effPts : onE1 ? e1ChartPts : topPts
   // A line needs two workouts. A range that holds fewer says so, instead of a lone dot or an empty box.
@@ -698,7 +711,7 @@ export default function Stats() {
         {exHist.length ? <>
           <div className="sect-b" style={{ marginBottom: 10 }}>
             <SelectRow title={t('Exercise')} sheetTitle={t('Exercise progress')} value={curEx} onChange={setExId} stackedValue
-              options={exHist.map(id => ({ value: id, label: (EXIDX[id] ? exerciseNameText(EXIDX[id]) : nameOf(id)) + (exCurrent[id].mx ? ' · ' + fmtNum(exCurrent[id].mx) + ' ' + exCurrent[id].unit : '') }))}
+              options={exHist.map(id => ({ value: id, label: (EXIDX[id] ? exerciseNameText(EXIDX[id]) : nameOf(id)) + (exCurrent[id].mx ? ' · ' + (exCurrent[id].band ? '' : fmtNum(exCurrent[id].mx) + ' ') + exCurrent[id].unit : '') }))}
               search={{
                 placeholder: t('Search…'),
                 label: t('Search…'),
@@ -717,7 +730,7 @@ export default function Stats() {
               ? <LineChart points={maxChartPts} h={150} unit={t('reps')} color="var(--blue)" />
               : onEff
               ? <LineChart points={effPts} h={150} unit={hd} color="var(--yellow)" invert={kind === 'rir'} />
-              : <LineChart points={chartPts} h={150} unit={exUnit} color="var(--blue)" />}
+              : <LineChart points={chartPts} h={150} unit={exUnit} color="var(--blue)" formatY={curBand ? bandLabel : undefined} />}
           </div>
           {onSets && !rangeTooShort && <div className="row small" style={{ gap: 12, flexWrap: 'wrap', marginTop: 6 }}>
             {perSetChart.ns.map(n => <span key={n} className="row" style={{ gap: 5, alignItems: 'center' }}>
@@ -727,8 +740,8 @@ export default function Stats() {
           <div style={{ marginTop: 8 }}>{exList.map((p, i) => <div key={i} className="row between small" style={{ padding: '6px 0', borderBottom: 'var(--hair) solid var(--sep)' }}>
             <span className="muted">{fmtDate(p.d, true)}</span><span>{p.sets.map(s => setLabel(curEx, s, p.target, speedUnit)).join('  ')}</span></div>)}</div>
           <div className="small dim" style={{ marginTop: 8 }}>
-            {onSets ? (perSet.metric === 'reps' ? t('Reps in each working set, one line per set number') : t('Estimated 1RM of each working set, one line per set number')) : onMax ? <>{t('Most reps in a Max set per workout')} · {t('Best:')}{' '}<b className="accent">{maxBest} {t('reps')}</b></> : onEff ? t('Average effort per workout') : onE1 ? t('Estimated 1RM per workout') : curCardio ? t('Top speed per workout') : curTimed ? t('Longest hold per workout') : repsOnly ? t('Most reps in a set per workout') : t('Best set weight per workout')}
-            {onEff || onMax || onSets ? '' : <> · {t('Best:')}{' '}<b className="accent">{fmtNum(onE1 ? e1Best.est : exBest)} {onE1 ? S.unit : exUnit}</b></>}
+            {onSets ? (perSet.metric === 'reps' ? t('Reps in each working set, one line per set number') : t('Estimated 1RM of each working set, one line per set number')) : onMax ? <>{t('Most reps in a Max set per workout')} · {t('Best:')}{' '}<b className="accent">{maxBest} {t('reps')}</b></> : onEff ? t('Average effort per workout') : onE1 ? t('Estimated 1RM per workout') : curBand ? t('Least assistance band per workout') : curCardio ? t('Top speed per workout') : curTimed ? t('Longest hold per workout') : repsOnly ? t('Most reps in a set per workout') : t('Best set weight per workout')}
+            {onEff || onMax || onSets ? '' : <> · {t('Best:')}{' '}<b className="accent">{curBand && !onE1 ? bandHistory.bestLabel : <>{fmtNum(onE1 ? e1Best.est : exBest)} {onE1 ? S.unit : exUnit}</>}</b></>}
           </div>
           {onSets && (perSet.drop || perSet.hidden > 0) && <div className="small dim" style={{ marginTop: 4 }}>
             {perSet.drop && t('Where you most often drop off: set {0} ({1} of {2} workouts)', perSet.drop.n, perSet.drop.count, perSet.drop.of)}

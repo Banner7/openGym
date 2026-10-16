@@ -11,7 +11,7 @@ import { ACCENTS, ACCENT_NAMES, todayISO, localTZ, weekStartOf, MONDAY, SUNDAY, 
 import { inventoryFor, ownsPlates } from '../lib/plates.js'
 import { dumbbellsOf } from '../lib/dumbbells.js'
 import { effortOf } from '../lib/history.js'
-import { figureOf } from '../lib/exercises.js'
+import { figureOf, bandsOf, bandName, bandColor } from '../lib/exercises.js'
 import { unlock, chime, playOnSilentSupported, vibrateSupported, appleTouchDevice } from '../lib/sound.js'
 import { REST_SOUND_IDS, restSoundOf } from '../lib/rest-sounds.js'
 import { scheduleModeOf, chooseFixedWeek, chooseRotation } from '../lib/rotation.js'
@@ -706,7 +706,7 @@ export default function Settings({ page = null, find = null, via = null }) {
       </Section>
     </>,
 
-    equipment: () => <EquipmentCard S={S} update={update} />,
+    equipment: () => <><EquipmentCard S={S} update={update} /><BandSettings S={S} update={update} /></>,
 
     look: () => <>
       <Section footer={DEMO || MOBILE || !user ? undefined : t('synced with your profile')}>
@@ -1316,6 +1316,35 @@ function EquipmentCard({ S, update }) {
       </Row>
     ))}
     <Row icon="plus" iconTint="var(--acc)" title={t('Add equipment profile')} accessory="chevron" onClick={() => equipmentProfileSheet(null)} />
+  </Section>
+}
+
+function BandSettings({ S, update }) {
+  const [color, setColor] = useState('')
+  const bands = bandsOf(S)
+  const save = next => update(s => { s.bands = next })
+  const move = (index, by) => {
+    const next = [...bands]
+    ;[next[index], next[index + by]] = [next[index + by], next[index]]
+    save(next)
+  }
+  const add = () => {
+    const id = color.trim().toLowerCase()
+    if (!id || bands.includes(id)) return
+    save([...bands, id])
+    setColor('')
+  }
+  return <Section title={t('Assistance bands')} footer={t('Least assistance first, most assistance last. Progression moves toward the top. Removed colors stay in your log but do not count as records.')}>
+    {bands.map((band, index) => <Row key={band} title={bandName(band)}>
+      <span aria-hidden="true" style={{ width: 16, height: 16, borderRadius: '50%', background: bandColor(band), border: '1px solid var(--muted)' }} />
+      <button className="iconbtn" aria-label={t('Move up')} disabled={index === 0} onClick={() => move(index, -1)}><Icon name="arrowUp" /></button>
+      <button className="iconbtn" aria-label={t('Move down')} disabled={index === bands.length - 1} onClick={() => move(index, 1)}><Icon name="arrowDown" /></button>
+      <button className="iconbtn" aria-label={t('Delete')} disabled={bands.length <= 1} onClick={() => save(bands.filter((_, i) => i !== index))}><Icon name="trash" /></button>
+    </Row>)}
+    <Row title={t('Add band color')}>
+      <input aria-label={t('Band color')} value={color} onChange={e => setColor(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add() }} />
+      <button className="iconbtn" aria-label={t('Add')} onClick={add}><Icon name="plus" /></button>
+    </Row>
   </Section>
 }
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useStore } from '../store/useStore.js'
-import { exOr } from '../lib/exercises.js'
+import { exOr, isBandAssisted, bandName } from '../lib/exercises.js'
 import { clampIncline, hasIncline, inclineFits, INCLINE_MAX, INCLINE_STEP } from '../lib/incline.js'
 import { exerciseNameFor, t } from '../lib/i18n.js'
 import { fmtDate, fmtNum, fmtPlate } from '../lib/format.js'
@@ -20,6 +20,7 @@ import { baseWeightFor, inventoryFor, loadKindFor, rowLoad } from '../lib/plates
 import { ownedWeightsFor, stepOwned } from '../lib/dumbbells.js'
 import Icon from '../components/Icon.jsx'
 import { Button, Stepper } from '../components/ui.jsx'
+import BandPicker from '../components/BandPicker.jsx'
 import './FocusView.css'
 
 const firstIncomplete = entry => {
@@ -67,9 +68,10 @@ const addBurstTo = (row, restSec) => {
 function Prescription({ entry, setIdx, unit, fallbackRest, children }) {
   const target = entry.target || {}
   const reps = target.repsMin > 0 ? `${target.repsMin}–${target.reps}` : target.reps > 0 ? String(target.reps) : ''
-  const load = target.weight > 0
-    ? `@ ${fmtNum(target.weight)}${target.weightMax > target.weight ? `–${fmtNum(target.weightMax)}` : ''} ${unit}`
-    : ''
+  const load = isBandAssisted(entry) && target.band ? t('{0} band', bandName(target.band))
+    : target.weight > 0
+      ? `@ ${fmtNum(target.weight)}${target.weightMax > target.weight ? `–${fmtNum(target.weightMax)}` : ''} ${unit}`
+      : ''
   const rpe = target.rpeMin > 0
     ? `RPE ${fmtNum(target.rpeMin)}${target.rpeMax > target.rpeMin ? `–${fmtNum(target.rpeMax)}` : ''}`
     : ''
@@ -98,6 +100,7 @@ function PlanBadge({ entry, mode }) {
 
 function PlateBadge({ S, entry, set }) {
   if (modeOf({ ...(entry.target || {}), id: entry.id }) !== 'reps') return null
+  if (isBandAssisted(entry)) return null
   const load = rowLoad(loadKindFor(S, { ...(entry.target || {}), id: entry.id }), set.w, baseWeightFor(S, entry.id), inventoryFor(S))
   if (!load) return null
   const stack = load.plates.map(fmtPlate).join(' + ')
@@ -129,6 +132,7 @@ export default function FocusView({
   const locked = !set.done && setIdx > firstOpenSet
   const readOnly = set.done || locked
   const mode = modeOf({ ...(entry.target || {}), id: entry.id })
+  const bandAssist = mode === 'reps' && isBandAssisted(entry)
   const effort = effortOf(S)
   const effortField = EFFORT[effort]?.f
   const effortValue = effortField ? set[effortField] ?? null : null
@@ -177,8 +181,9 @@ export default function FocusView({
           onClick={() => onToggleSide(setIdx, side,
             !sideSet.done && (set.sides.L.done || set.sides.R.done) ? onProgress : undefined)}><Icon name="check" /></button>
       </div>
-      <Stepper label={t('Load ({0})', S.unit)} ariaLabel="load" value={sideSet.w || 0} step={loadStep} onStep={stepLoad} disabled={readOnly || sideSet.done}
-        onChange={value => change('w', value)} />
+      {bandAssist ? <BandPicker S={S} value={sideSet.band} disabled={readOnly || sideSet.done} onChange={value => change('band', value)} />
+        : <Stepper label={t('Load ({0})', S.unit)} ariaLabel="load" value={sideSet.w || 0} step={loadStep} onStep={stepLoad} disabled={readOnly || sideSet.done}
+          onChange={value => change('w', value)} />}
       <Stepper label={t('Reps')} ariaLabel="reps" value={sideSet.r || 0} step={1} decimal={false} disabled={readOnly || sideSet.done}
         onChange={value => change('r', value)} />
       <div className="focus-extras">
@@ -299,8 +304,9 @@ export default function FocusView({
             {(inclineFits(ex) || entry.sets.some(hasIncline)) && <Stepper label={t('Incline (%)')} ariaLabel="incline" value={set.incline || 0} step={INCLINE_STEP} max={INCLINE_MAX} disabled={readOnly}
               onChange={value => onField(setIdx, 'incline', clampIncline(value))} />}
           </> : <>
-            <Stepper label={t('Load ({0})', S.unit)} ariaLabel="load" value={set.w || 0} step={loadStep} onStep={stepLoad} disabled={readOnly}
-              onChange={value => onField(setIdx, 'w', value)} />
+            {bandAssist ? <BandPicker S={S} value={set.band} disabled={readOnly} onChange={value => onField(setIdx, 'band', value)} />
+              : <Stepper label={t('Load ({0})', S.unit)} ariaLabel="load" value={set.w || 0} step={loadStep} onStep={stepLoad} disabled={readOnly}
+                onChange={value => onField(setIdx, 'w', value)} />}
           {mode === 'time' ? <div className="focus-timed">
             <strong>{t('{0}s hold', set.sec || entry.target?.sec || 45)}</strong>
             <Button icon="play" aria-label={t('Start set')} disabled={readOnly || busy}

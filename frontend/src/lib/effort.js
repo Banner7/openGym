@@ -9,7 +9,7 @@
 import { EFFORT, effortOf, workoutAt } from './history.js'
 import { weekKey, weekStartOf, startOfWeek } from './format.js'
 import { isWarmupRow, isFailureSet } from './workout-model.js'
-import { isAssisted } from './exercises.js'
+import { isAssisted, isBandAssisted } from './exercises.js'
 
 // At or below this a set is close enough to failure to be the kind that drives adaptation.
 // 3 rather than 2: the line is a convention, and drawn one rep too generously it still
@@ -120,7 +120,7 @@ export function hasEstimableEffort(S) {
     const wgt = Number(s?.w)
     const reps = Number(s?.r)
     if (!(wgt > 0) || !(reps >= 1) || reps > 12) return
-    if (isAssisted(e?.id ? { id: e.id } : e)) return
+    if (s.band || isBandAssisted(e) || isAssisted(e?.id ? { id: e.id } : e)) return
     any = true
   })
   return any

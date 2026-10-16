@@ -1,7 +1,7 @@
 import { metricEntriesForExercise, metricRowsForEntry, bestWeightForEntry, completedRepsOf, modeOf, workoutAt } from './history.js'
-import { completedVolumeOf } from './workout-model.js'
+import { completedVolumeOf, isSideSet } from './workout-model.js'
 import { bestSetOf } from './onerm.js'
-import { beatsWeight } from './exercises.js'
+import { beatsWeight, isBandAssisted, bandsOf, bandName, compareBandSets } from './exercises.js'
 import { currentDbLoad, historyAs, volumeFactor, workoutAs } from './dumbbells.js'
 
 // One exercise's past, read back for the history sheet (issue #43): a chart series and the
@@ -25,7 +25,7 @@ export const HISTORY_SESSIONS = 10
 // Volume of the exercise in one session: main set plus its drops/bursts, reps mode only —
 // there is no honest tonnage for a hold or a run.
 // A dumbbell entry logged per bell counts both bells (lib/dumbbells.js volumeFactor).
-const entryVolume = (rows, en) => rows.reduce((v, s) => v + completedVolumeOf(s), 0) * volumeFactor(en)
+const entryVolume = (rows, en) => isBandAssisted(en) ? 0 : rows.reduce((v, s) => v + completedVolumeOf(s), 0) * volumeFactor(en)
 
 export function exerciseHistory(S, exId, { limit = HISTORY_SESSIONS } = {}) {
   // Dumbbell weights are read in the exercise's current meaning (lib/dumbbells.js), so the curve,
@@ -51,6 +51,22 @@ export function exerciseHistory(S, exId, { limit = HISTORY_SESSIONS } = {}) {
   if (!logged.length) return empty
 
   const mode = logged[logged.length - 1].mode
+  if (mode === 'reps' && (isBandAssisted(logged.at(-1).en) || logged.at(-1).rows.some(s => s.band || s.sides?.L?.band || s.sides?.R?.band))) {
+    const bands = bandsOf(S)
+    let bestSet = null, prId = null
+    const points = [], sessions = []
+    for (const { w, en, mode: m, rows } of logged) {
+      const set = m === 'reps' ? bestBandSetForEntry(en, S) : null
+      const value = set ? bands.length - bands.indexOf(set.band) : null
+      const label = set ? bandName(set.band) : null
+      if (set && compareBandSets(set, bestSet, S) > 0) { bestSet = set; prId = w.id }
+      if (value != null) points.push({ t: workoutAt(w), d: w.d, y: value, note: label + ' · ' + set.r, band: set.band, sets: rows, target: en.target })
+      sessions.push({ id: w.id, d: w.d, t: workoutAt(w), mode: m, target: en.target, sets: rows, value, label, volume: null, e1rm: null })
+    }
+    return { mode, metric: 'band', best: bestSet ? bands.length - bands.indexOf(bestSet.band) : 0,
+      bestLabel: bestSet ? bandName(bestSet.band) + ' × ' + bestSet.r : null, prId, total: sessions.length,
+      sessions: sessions.slice(-limit).reverse().map(s => ({ ...s, pr: s.id === prId })), points, e1rmPoints: [] }
+  }
   const repsOnly = mode === 'reps' && !logged.some(l => l.mode === 'reps' && bestWeightForEntry(l.en) > 0)
   const metric = mode === 'cardio' ? 'min' : mode === 'time' ? 'sec' : repsOnly ? 'reps' : 'weight'
   const valueOf = ({ en, rows }) => {
@@ -104,10 +120,12 @@ export function exerciseHistory(S, exId, { limit = HISTORY_SESSIONS } = {}) {
  * Returns { d, set, target } or null.
  */
 export function bestSetFor(S, exId, mode = modeOf({ id: exId }), as) {
+  const bandMode = isBandAssisted(exId) || (S?.workouts || []).some(w => w.entries?.some(e => e.id === exId && (isBandAssisted(e) || e.sets?.some(s => s.band || s.sides?.L?.band || s.sides?.R?.band))))
   const keys = s => mode === 'cardio' ? [Number(s.min) || 0, Number(s.speed) || 0]
     : mode === 'time' ? [Number(s.sec) || 0, Number(s.w) || 0]
       : [Number(s.w) || 0, Number(s.r) || 0]
   const better = (a, b) => {
+    if (bandMode && mode === 'reps') return compareBandSets(a, b, S) > 0
     const [a1, a2] = keys(a), [b1, b2] = keys(b)
     if (a1 !== b1) return mode === 'reps' ? beatsWeight(exId, a1, b1) : a1 > b1
     return a2 > b2
@@ -125,10 +143,29 @@ export function bestSetFor(S, exId, mode = modeOf({ id: exId }), as) {
     for (const en of w.entries || []) {
       if (en.id !== exId) continue
       for (const set of metricRowsForEntry(en, mode)) {
+        if (bandMode && mode === 'reps') {
+          const candidate = bestBandSetForEntry({ ...en, sets: [set] }, S)
+          if (!candidate) continue
+          t ??= workoutAt(w)
+          if (!best || better(candidate, best.set) || (!better(best.set, candidate) && t < best.t)) best = { d: w.d, set: candidate, target: en.target || null, t }
+          continue
+        }
         t ??= workoutAt(w)
         if (!best || better(set, best.set) || (!better(best.set, set) && t < best.t)) best = { d: w.d, set, target: en.target || null, t }
       }
     }
   }
   return best && { d: best.d, set: best.set, target: best.target }
+}
+
+export function bestBandSetForEntry(entry, S) {
+  let best = null
+  for (const row of metricRowsForEntry(entry, 'reps')) {
+    const sides = isSideSet(row) ? [row.sides.L, row.sides.R] : [row]
+    for (const set of sides) {
+      if (!set.done || bandsOf(S).indexOf(set.band) < 0) continue
+      if (!best || compareBandSets(set, best, S) > 0) best = set
+    }
+  }
+  return best
 }

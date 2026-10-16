@@ -136,7 +136,7 @@ export function replaceSlotExercise(slot, id, S, rid) {
     const kept = ['sg', 'note', 'restSec'].filter(key => old[key] != null)
     return { id, ...defaultConfig(id), ...Object.fromEntries(kept.map(key => [key, old[key]])) }
   }
-  const { id: _replaced, bodyweight: _flag, assisted: _assisted, side: _side, ...carried } = old
+  const { id: _replaced, bodyweight: _flag, assisted: _assisted, bandAssist: _bandAssist, band: _band, side: _side, ...carried } = old
   const out = { id, ...carried }
   if (isCardio(id)) return out
   if (isBw(old) !== isBodyweightEq(id)) {

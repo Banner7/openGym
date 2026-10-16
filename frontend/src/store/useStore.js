@@ -27,6 +27,7 @@ import { DEFAULT_TEMPLATE_ID } from '../lib/structuralBalanceTemplates.js'
 
 import { WC_DEFAULT } from '../lib/workout-controls.js'
 import { sanitizeAccent } from '../lib/accent.js'
+import { DEFAULT_BANDS } from '../lib/exercises.js'
 
 const KEY = 'gym_state_v1'
 // Where the saved copy stands with the server: the revision it descends from, and its own `_ts`
@@ -176,6 +177,8 @@ export const DEF = {
   // (lib/dumbbells.js). Single bells, lightest first. Kept per unit and stamped like the plates;
   // absent or empty = no list, and dumbbell lifts step by their increment as before.
   dumbbells: {},
+  // Least assistance first; edited as one ordered choice by sync-merge's setting stamps.
+  bands: [...DEFAULT_BANDS],
   // Gym check-in cards (see views/CheckIn.jsx). Each is a membership
   // code shown as a QR/barcode at the gym's turnstile — added by typing it, importing a photo
   // of the card, or scanning it. We only ever keep the code's VALUE, never a photo: the image

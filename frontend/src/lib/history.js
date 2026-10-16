@@ -3,7 +3,7 @@ import { syncSupersetMeta } from './superset-meta.js'
 import { todayISO, isoOf, weekKey, weekStartOf, fmtNum } from './format.js'
 import { fmtSpeed } from './speed.js'
 import { hasIncline, inclineFrom } from './incline.js'
-import { isCardio, isBodyweightEq, isAssisted, betterWeight } from './exercises.js'
+import { isCardio, isBodyweightEq, isAssisted, isBandAssisted, bandsOf, bandName, betterWeight } from './exercises.js'
 import { barWeightFor } from './bar.js'
 import { phaseForSet, modeForSet, modeForEntry, isWarmupRow, isFailureSet, isDropSet, isRestPauseSet, normalizeMode, completedVolumeOf, hasCompletedWork, nextDropWeight, splitBurstReps, makeSideSet, isSideSet, syncSideAggregate, WEIGHT_ORIGIN_MANUAL, dropsOf, clustersOf } from './workout-model.js'
 import { backoffAt, backoffStepOf, backoffWeights } from './backoff.js'
@@ -188,6 +188,7 @@ export function setLabel(id, s, cfg, speedUnit) {
   // follow it ("100×8 ↘ 80×6"): the volume of the workout counts them, so the list has to show
   // them, or the total includes weight nobody can see where it came from.
   const oneSide = side => {
+    if (side.band || isBandAssisted(c)) return (side.band ? t('{0} band', bandName(side.band)) : t('Band')) + ' × ' + repsOf(side)
     const drops = dropsOf(side).filter(d => (Number(d?.r) || 0) > 0)
     return load(side.w, repsOf(side)) + drops.map(d => ' ↘ ' + load(Number(d.w) || 0, Number(d.r))).join('')
   }
@@ -611,6 +612,12 @@ function buildWorkSets(S, cfg, options = {}) {
       ? (cfg.weight > 0 ? cfg.weight : (lastRegular && lastRegular.r > 0 ? lastRegular.w : cfg.weight))
       : usable ? usable.w : (conf && conf.w > 0 ? conf.w : cfg.weight)
     const row = { w, r: planReps || !usable ? cfg.reps : usable.r, done: false }
+    if (isBandAssisted(cfg)) {
+      const completed = last?.sets?.filter(s => s.done && !isWarmupRow(s))
+      const seed = !useTarget && completed?.length ? (completed[i] || completed.at(-1)) : null
+      row.w = 0
+      row.band = seed?.band || cfg.band || bandsOf(S).at(-1)
+    }
     // Pyramid sets: the plan owns each set's own target; a max set opens at what you managed
     // in that same set last time, so the number to beat is already there.
     if (isPyramid(cfg)) {
@@ -645,7 +652,7 @@ function buildWorkSets(S, cfg, options = {}) {
 function seedSideFromLast(row, prev, planReps) {
   const base = makeSideSet(row)
   if (!isSideSet(prev)) return base
-  const carry = (s, key) => ({ w: Number(s?.w) || 0, r: planReps ? base.sides[key].r : Number(s?.r) || 0, done: false })
+  const carry = (s, key) => ({ w: row.band ? 0 : Number(s?.w) || 0, ...(row.band ? { band: s?.band || row.band } : {}), r: planReps ? base.sides[key].r : Number(s?.r) || 0, done: false })
   return syncSideAggregate({ ...base, sides: { L: carry(prev.sides.L, 'L'), R: carry(prev.sides.R, 'R') } })
 }
 
@@ -743,6 +750,7 @@ export function workoutVolume(w) {
   // A dumbbell entry logged per bell counts both bells (volumeFactor, lib/dumbbells.js); every
   // other entry, and every one saved before the setting existed, counts its weight once.
   ;(Array.isArray(w?.entries) ? w.entries : []).forEach(e => {
+    if (isBandAssisted(e)) return
     const f = volumeFactor(e)
     ;(Array.isArray(e?.sets) ? e.sets : []).forEach(s => {
       if (!isWarmupRow(s)) v += completedVolumeOf(s) * f
@@ -1038,6 +1046,8 @@ export function insertWarmupRow(rows, mode, target, step = 2.5, floor = 0) {
         r: work ? work.r : (prev ? prev.r : target.reps),
         done: false, phase: 'warmup', warmup: true,
       }
+  const band = prev?.band || work?.band || target.band
+  if (mode === 'reps' && band) { warm.band = band; warm.w = 0 }
   // A unilateral exercise warms up per side too (issue #60): the warm-up row splits into L/R
   // like the work sets it ramps toward, each side logged and ticked on its own with its own
   // reps and effort. The reps `r` above is the combined total (the work set's, or the plan's
@@ -1064,6 +1074,7 @@ export function makeWarmupAt(rows, i) {
   const src = rows[i]
   if (!canBeWarmup(src)) return rows
   const warm = { w: src.w || 0, r: src.r, done: !!src.done, phase: 'warmup', warmup: true }
+  if (src.band) { warm.band = src.band; warm.w = 0 }
   if (src.at != null) warm.at = src.at
   return placeRow(rows, i, warm)
 }
@@ -1204,6 +1215,7 @@ export function completedRepsOf(set = {}) {
 /** Best load from completed work rows, with a guarded reps-only legacy topW fallback. */
 
 export function bestWeightForEntry(entry = {}) {
+  if (isBandAssisted(entry) || entry.sets?.some(s => s.band || s.sides?.L?.band || s.sides?.R?.band)) return 0
   const target = entry.target || entry
   const workRows = Array.isArray(entry.sets)
     ? entry.sets.filter(s => phaseForSet(s) === 'work')

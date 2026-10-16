@@ -94,6 +94,8 @@ function cleanEx(e) {
   // How the exercise is logged travels too (issues #31/#32) — the bodyweight flag only when
   // it disagrees with the catalogue, since agreeing is what the other end already assumes.
   if (e.bodyweight != null && e.bodyweight !== isBodyweightEq(e.id)) o.bodyweight = e.bodyweight
+  if (typeof e.bandAssist === 'boolean') o.bandAssist = e.bandAssist
+  if (typeof e.band === 'string') o.band = e.band
   // Reps work and timed holds (a per-side hold is an L and an R hold per set); never cardio.
   if (e.side && mode !== 'cardio') o.side = true
   // Progression settings travel with the plan — a shared Greyskull routine that arrives
@@ -178,6 +180,7 @@ function cleanCustom(c) {
   const url = cleanUrl(c.url)
   if (url) o.url = url
   if (typeof c.eq === 'string' && c.eq) o.eq = c.eq
+  if (typeof c.bandAssist === 'boolean') o.bandAssist = c.bandAssist
   const prim = muscleList(c.primaries)
   const sm = muscleList(c.secondaries).filter(m => !prim.includes(m))
   // `tg` is the legacy single primary; the form keeps it equal to the first primary.

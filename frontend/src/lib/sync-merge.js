@@ -616,6 +616,8 @@ const OWN_MERGE = new Set([
 ])
 // Stamped per key instead of whole: one day of the plan, one exercise's note or bar.
 const PER_KEY = new Set(['week', 'dayPlan', 'exNotes', 'barWeights'])
+// `bands` is one ordered setting, so the generic whole-field stamp above keeps reorders,
+// additions and removals together instead of unioning removed colours back into the list.
 // The order of the routines, as the list shows them, is a choice of its own (`edited.routineOrder`):
 // a reorder on one device was lost to the other's whole copy whenever that one was newer.
 export const ORDER_KEY = 'routineOrder'
