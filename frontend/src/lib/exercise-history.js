@@ -1,7 +1,7 @@
 import { metricEntriesForExercise, metricRowsForEntry, bestWeightForEntry, completedRepsOf, modeOf, workoutAt } from './history.js'
 import { completedVolumeOf } from './workout-model.js'
 import { bestSetOf } from './onerm.js'
-import { beatsWeight } from './exercises.js'
+import { beatsWeight, cardioMetrics } from './exercises.js'
 import { currentDbLoad, historyAs, volumeFactor, workoutAs } from './dumbbells.js'
 
 // One exercise's past, read back for the history sheet (issue #43): a chart series and the
@@ -52,9 +52,11 @@ export function exerciseHistory(S, exId, { limit = HISTORY_SESSIONS } = {}) {
 
   const mode = logged[logged.length - 1].mode
   const repsOnly = mode === 'reps' && !logged.some(l => l.mode === 'reps' && bestWeightForEntry(l.en) > 0)
-  const metric = mode === 'cardio' ? 'min' : mode === 'time' ? 'sec' : repsOnly ? 'reps' : 'weight'
+  const primary = cardioMetrics({ ...logged.at(-1).en.target, id: exId })[0]
+  const cardioMetric = ['floors', 'm'].includes(primary) ? primary : 'min'
+  const metric = mode === 'cardio' ? cardioMetric : mode === 'time' ? 'sec' : repsOnly ? 'reps' : 'weight'
   const valueOf = ({ en, rows }) => {
-    if (metric === 'min') return rows.reduce((a, s) => a + (Number(s.min) || 0), 0)
+    if (['min', 'floors', 'm'].includes(metric)) return rows.reduce((a, s) => a + (Number(s[metric]) || 0), 0)
     if (metric === 'sec') return Math.max(0, ...rows.map(s => Number(s.sec) || 0))
     if (metric === 'reps') return Math.max(0, ...rows.map(completedRepsOf))
     return bestWeightForEntry(en)
@@ -104,11 +106,15 @@ export function exerciseHistory(S, exId, { limit = HISTORY_SESSIONS } = {}) {
  * Returns { d, set, target } or null.
  */
 export function bestSetFor(S, exId, mode = modeOf({ id: exId }), as) {
-  const keys = s => mode === 'cardio' ? [Number(s.min) || 0, Number(s.speed) || 0]
-    : mode === 'time' ? [Number(s.sec) || 0, Number(s.w) || 0]
-      : [Number(s.w) || 0, Number(s.r) || 0]
-  const better = (a, b) => {
-    const [a1, a2] = keys(a), [b1, b2] = keys(b)
+  const keys = (s, cfg) => {
+    const primary = cardioMetrics({ ...cfg, id: exId })[0]
+    const field = ['floors', 'm'].includes(primary) ? primary : 'min'
+    return mode === 'cardio' ? [Number(s[field]) || 0, field === 'min' ? Number(s.speed) || 0 : -(Number(s.min) || 0)]
+      : mode === 'time' ? [Number(s.sec) || 0, Number(s.w) || 0]
+        : [Number(s.w) || 0, Number(s.r) || 0]
+  }
+  const better = (a, b, cfg) => {
+    const [a1, a2] = keys(a, cfg), [b1, b2] = keys(b, cfg)
     if (a1 !== b1) return mode === 'reps' ? beatsWeight(exId, a1, b1) : a1 > b1
     return a2 > b2
   }
@@ -126,7 +132,7 @@ export function bestSetFor(S, exId, mode = modeOf({ id: exId }), as) {
       if (en.id !== exId) continue
       for (const set of metricRowsForEntry(en, mode)) {
         t ??= workoutAt(w)
-        if (!best || better(set, best.set) || (!better(best.set, set) && t < best.t)) best = { d: w.d, set, target: en.target || null, t }
+        if (!best || better(set, best.set, en.target) || (!better(best.set, set, en.target) && t < best.t)) best = { d: w.d, set, target: en.target || null, t }
       }
     }
   }

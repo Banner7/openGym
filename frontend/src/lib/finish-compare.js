@@ -71,7 +71,7 @@ export function finishCardio(w) {
   const rows = []
   for (const entry of w?.entries || []) {
     if (!entry?.id || modeOf({ ...(entry.target || {}), id: entry.id }) !== 'cardio') continue
-    const sets = (Array.isArray(entry.sets) ? entry.sets : []).filter(s => s && s.done && (Number(s.min) > 0 || Number(s.speed) > 0))
+    const sets = (Array.isArray(entry.sets) ? entry.sets : []).filter(s => s && s.done && ['min', 'speed', 'floors', 'm', 'level'].some(k => Number(s[k]) > 0))
     if (sets.length) rows.push({ id: entry.id, target: entry.target, sets })
   }
   return rows

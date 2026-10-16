@@ -8,9 +8,10 @@
 //  2. A clean, printable page (Save as PDF) where a single exercise never splits across
 //     a page break — each exercise, and each routine that fits, stays in one place.
 
-import { EXIDX, canonicalExId, isBodyweightEq } from './exercises.js'
+import { EXIDX, canonicalExId, isBodyweightEq, cardioMetrics } from './exercises.js'
 import { cleanUrl } from './media-refs.js'
 import { modeOf, exLine, MAX_PLANNED_WARMUPS } from './history.js'
+import { cardioLabel, cardioDefaults } from './cardio.js'
 import { deriveSessionName } from './session-merge.js'
 import { isPyramid, normalizePyramid, normalizePyramidRest, normalizePyramidWeight } from './pyramid.js'
 import { isBackoff } from './backoff.js'
@@ -19,7 +20,7 @@ import { MAX_TRIPLE_SETS } from './progression.js'
 import { uid, todayISO, DAYN, weekOrder, weekStartOf, exCount } from './format.js'
 import { t, exerciseNameFor, exerciseNameClass, getLang, RTL_LANGS } from './i18n-core.js'
 import { convertWeight } from './units.js'
-import { fmtSpeed, speedUnitOf } from './speed.js'
+import { speedUnitOf } from './speed.js'
 import { MUSCLES, inMuscleOrder } from './muscles.js'
 
 const PLAN_FMT = 1
@@ -71,8 +72,7 @@ function cleanEx(e) {
   const o = { id: e.id, sets: e.sets }
   const mode = modeOf(e)
   if (mode === 'cardio') {
-    if (e.min != null) o.min = e.min
-    if (e.speed != null) o.speed = e.speed
+    for (const field of ['min', 'speed', 'floors', 'm', 'level', 'metrics']) if (e[field] != null) o[field] = e[field]
   } else if (mode === 'time') {
     // Written out even though 'reps' is the fallback for a non-cardio id: a plan file that
     // dropped the mode would turn a 45-second plank into a 45-rep one at the other end.
@@ -178,6 +178,7 @@ function cleanCustom(c) {
   const url = cleanUrl(c.url)
   if (url) o.url = url
   if (typeof c.eq === 'string' && c.eq) o.eq = c.eq
+  if (Array.isArray(c.metrics)) o.metrics = cardioMetrics(c)
   const prim = muscleList(c.primaries)
   const sm = muscleList(c.secondaries).filter(m => !prim.includes(m))
   // `tg` is the legacy single primary; the form keeps it equal to the first primary.
@@ -333,7 +334,7 @@ function scheme(e, unit, speedUnit) {
   const sets = e.sets || 1
   const mode = modeOf(e)
   if (mode === 'cardio') {
-    const body = `${e.min || 20} min @ ${fmtSpeed(e.speed || 8, speedUnit)}`
+    const body = cardioLabel({ ...cardioDefaults(e), ...e }, e, speedUnit)
     return sets > 1 ? `${sets} × ${body}` : body
   }
   const line = exLine({ ...e, reps: e.reps ?? 10 }, unit, speedUnit)

@@ -74,7 +74,9 @@ function copiedEntry(entry, source) {
   const cfg = { ...defaultConfig(entry?.id), ...target, id: entry?.id, sets: Math.max(1, setsFromRows({ ...defaultConfig(entry?.id), ...target }, work.length) || 1), warmupSets: rows.filter(isWarmupRow).length }
   const mode = modeOf(cfg)
   if (mode === 'time' && row) Object.assign(cfg, { sec: row.sec ?? cfg.sec, weight: row.w ?? cfg.weight ?? 0 })
-  else if (mode === 'cardio' && row) Object.assign(cfg, { min: row.min ?? cfg.min, speed: row.speed ?? cfg.speed })
+  else if (mode === 'cardio' && row) {
+    for (const field of ['min', 'speed', 'floors', 'm', 'level']) if (row[field] != null) cfg[field] = row[field]
+  }
   else if (mode === 'reps') {
     const reps = row && isPerSide(cfg) ? perSideReps(row, cfg) : positive(row?.r)
     if (reps != null) cfg.reps = reps

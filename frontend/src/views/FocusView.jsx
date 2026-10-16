@@ -14,7 +14,8 @@ import {
   setDropAt, setSideClusterAt, setSideDropAt, setSideField,
 } from '../lib/workout-model.js'
 import { weightIncrement, stepWeight } from '../lib/progression.js'
-import { speedUnitOf, toSpeed, fromSpeed } from '../lib/speed.js'
+import { speedUnitOf } from '../lib/speed.js'
+import { cardioColumns, isRower, rowingPace } from '../lib/cardio.js'
 import { effortPickerSheet, exerciseDetailSheet, exerciseHistorySheet, exerciseNoteSheet, menuSheet, barWeightSheet } from '../sheets.jsx'
 import { baseWeightFor, inventoryFor, loadKindFor, rowLoad } from '../lib/plates.js'
 import { ownedWeightsFor, stepOwned } from '../lib/dumbbells.js'
@@ -129,6 +130,7 @@ export default function FocusView({
   const locked = !set.done && setIdx > firstOpenSet
   const readOnly = set.done || locked
   const mode = modeOf({ ...(entry.target || {}), id: entry.id })
+  const machineCols = cardioColumns({ ...entry.target, id: entry.id }, speedUnit)
   const effort = effortOf(S)
   const effortField = EFFORT[effort]?.f
   const effortValue = effortField ? set[effortField] ?? null : null
@@ -291,12 +293,12 @@ export default function FocusView({
           {mode === 'cardio' ? <>
             <Stepper label={t('Duration (min)')} ariaLabel="duration" value={set.min || 0} step={1} decimal={false} disabled={readOnly}
               onChange={value => onField(setIdx, 'min', value)} />
-            {/* Stored in km/h, shown and typed in the profile's speed unit, as on every other
-                cardio input (lib/speed.js). */}
-            <Stepper label={speedUnit === 'mph' ? t('Speed (mph)') : t('Speed (km/h)')} ariaLabel="speed" value={toSpeed(set.speed || 0, speedUnit)} step={0.5} disabled={readOnly}
-              onChange={value => onField(setIdx, 'speed', fromSpeed(value, speedUnit))} />
-            {/* The treadmill's grade, where the exercise has one (lib/incline.js). */}
-            {(inclineFits(ex) || entry.sets.some(hasIncline)) && <Stepper label={t('Incline (%)')} ariaLabel="incline" value={set.incline || 0} step={INCLINE_STEP} max={INCLINE_MAX} disabled={readOnly}
+            {machineCols.map(col => <Stepper key={col.f} label={col.hd} ariaLabel={col.f}
+              value={col.view ? col.view(set[col.f]) : set[col.f] || 0} step={col.step} decimal={col.dec}
+              max={col.f === 'level' ? 40 : undefined} disabled={readOnly}
+              onChange={value => onField(setIdx, col.f, col.store ? col.store(value) : value)} />)}
+            {isRower(entry) && rowingPace(set) && <div className="focus-badge">{rowingPace(set)}</div>}
+            {machineCols.some(c => c.f === 'speed') && (inclineFits(ex) || entry.sets.some(hasIncline)) && <Stepper label={t('Incline (%)')} ariaLabel="incline" value={set.incline || 0} step={INCLINE_STEP} max={INCLINE_MAX} disabled={readOnly}
               onChange={value => onField(setIdx, 'incline', clampIncline(value))} />}
           </> : <>
             <Stepper label={t('Load ({0})', S.unit)} ariaLabel="load" value={set.w || 0} step={loadStep} onStep={stepLoad} disabled={readOnly}

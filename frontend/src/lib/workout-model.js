@@ -363,7 +363,7 @@ function inferredMode(source) {
   const explicit = explicitMode(value)
   if (explicit) return explicit
   if (String(value.mode || '').trim().toLowerCase() === 'amrap') return 'reps'
-  if (value.min != null || value.speed != null) return 'cardio'
+  if (['min', 'speed', 'floors', 'm', 'level'].some(k => value[k] != null)) return 'cardio'
   if (value.sec != null || value.seconds != null || value.durationSec != null) return 'time'
   if (value.r != null || value.reps != null || value.actualReps != null) return 'reps'
   return null

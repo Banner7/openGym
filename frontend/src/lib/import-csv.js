@@ -18,7 +18,7 @@
 // body-weight records are interesting here. parseBodyweight() scans for those without
 // building a DOM.
 
-import { EXDB, EXIDX, canonicalExId, isCardio as isCardioEx } from './exercises.js'
+import { EXDB, EXIDX, canonicalExId, cardioMetrics, isCardio as isCardioEx } from './exercises.js'
 import { uid } from './format.js'
 import { isWarmupRow } from './workout-model.js'
 import { HEVY_TITLE_MAP } from './hevy-id-map.js'
@@ -582,6 +582,10 @@ export function parseWorkoutCSV(text, { unit = 'kg', customEx = [] } = {}) {
       : isCardio
         ? { min: mins || 0, speed: mins > 0 ? Math.round(km / (mins / 60) * 10) / 10 : 0, ...inclineFrom({ incline: clampIncline(num(cell(r, 'incline'))) }), done: true, ...(warmup ? { phase: 'warmup' } : {}) }
         : { w, r: reps || 0, done: true, u: rowUnit, ...(warmup ? { phase: 'warmup' } : {}) }
+    if (isCardio && km > 0 && cardioMetrics(EXIDX[id] || created.get(key) || prior.get(key)).includes('m')) {
+      set.m = km * 1000
+      delete set.speed
+    }
     // A "failure" set type (Hevy's CSV writes one) is the app's set taken to failure; not on
     // cardio, which has no effort to read it as.
     if (!warmup && !isCardio && /^(f|fail|failure)$/i.test(String(cell(r, 'setType') || '').trim())) set.failure = true

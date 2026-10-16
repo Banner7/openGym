@@ -5,7 +5,7 @@
 // with `node scripts/build-hevy-id-map.mjs`. The API key never leaves this module's
 // callers: nothing here stores it.
 
-import { EXIDX, canonicalExId } from './exercises.js'
+import { EXIDX, canonicalExId, cardioMetrics } from './exercises.js'
 import { uid } from './format.js'
 import { isWarmupRow } from './workout-model.js'
 import { HEVY_ID_MAP, HEVY_TITLE_MAP } from './hevy-id-map.js'
@@ -267,6 +267,7 @@ export function parseHevyWorkouts(workouts, templates, { unit = 'kg', customEx =
         const set = isCardio
           ? { min: mins, speed: mins > 0 ? Math.round(km / (mins / 60) * 10) / 10 : 0, done: true, ...(warmup ? { phase: 'warmup' } : {}) }
           : { w: wgt, r: reps || 0, done: true, ...(warmup ? { phase: 'warmup' } : {}) }
+        if (isCardio && km > 0 && cardioMetrics({ id }).includes('m')) { set.m = dist; delete set.speed }
         // Hevy's "failure" set type is the app's set taken to failure (workout-model isFailureSet).
         if (!isCardio && !warmup && /fail/i.test(String(s.type || ''))) set.failure = true
 
@@ -361,6 +362,7 @@ export function parseHevyRoutines(routines, templates, { unit = 'kg', customEx =
           id, sets: nWork, min: mins || 20,
           speed: mins > 0 ? Math.round(km / (mins / 60) * 10) / 10 : 0,
         }
+        if (cardioMetrics({ id }).includes('m')) { cfg.m = km * 1000; delete cfg.speed }
       } else if (secs > 0 && !reps && !wgt) {
         cfg = { id, sets: nWork, sec: Math.round(secs), weight: 0, mode: 'time' }
       } else {

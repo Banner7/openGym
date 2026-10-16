@@ -236,7 +236,7 @@ function itemsOf(w, exOf) {
         ex, mode, category, len, chained, at: Number.isFinite(at) ? at : null,
         reps: mode === 'reps' && reps > 0 ? reps : null,
         w: mode === 'cardio' ? null : Number(row.w) || 0,
-        km: mode === 'cardio' ? (Number(row.speed) || 0) * min / 60 : 0,
+        km: mode === 'cardio' ? row.m != null ? Math.max(0, Number(row.m) || 0) / 1000 : (Number(row.speed) || 0) * min / 60 : 0,
       })
     }
     for (const s of entry.sets || []) {

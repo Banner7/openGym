@@ -203,6 +203,20 @@ export const isVideoSrc = src => /\.(mp4|webm)(\?|$)/i.test(src || '')
 // Cardio exercises log time + speed instead of weight × reps.
 export const isCardio = idOrEx => (typeof idOrEx === 'string' ? EXIDX[idOrEx] : idOrEx)?.bp === 'cardio'
 
+// A routine or custom exercise can choose its own machine measurements.
+export function cardioMetrics(exOrCfg) {
+  const cfg = typeof exOrCfg === 'string' ? { id: exOrCfg } : exOrCfg || {}
+  const ex = EXIDX[cfg.id] || cfg
+  const metrics = cfg.metrics ?? cfg.target?.metrics ?? ex.metrics
+  if (Array.isArray(metrics)) return metrics.filter((field, i) =>
+    ['speed', 'floors', 'm', 'level'].includes(field) && metrics.indexOf(field) === i)
+  const name = ex.n || ''
+  if (ex.eq === 'stepmill machine' || /stair|step ?mill/i.test(name)) return ['floors']
+  if (/rowing|rower/i.test(name)) return ['m']
+  if (!/treadmill/i.test(name) && (['stationary bike', 'elliptical machine'].includes(ex.eq) || /bike|bicycle|cycl|elliptical|cross trainer/i.test(name))) return ['m', 'level']
+  return ['speed']
+}
+
 // Exercises the dataset already knows carry no external load (issue #32) — a quarter of the
 // catalogue. This seeds the `bw` flag on a fresh config so a push-up never asks for a weight
 // nobody was going to enter. It is only the default: the flag lives on the config, so a dip
