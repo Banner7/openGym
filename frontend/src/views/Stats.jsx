@@ -4,7 +4,7 @@ import { useStore } from '../store/useStore.js'
 import { EXIDX, matchExercise, betterWeight, isAssisted, isBandAssisted, bandsOf, bandName, cardioMetrics } from '../lib/exercises.js'
 import { lastBW, streakWeeks, setLabel, modeOf, effortOf, entriesForExercise, metricEntriesForExercise, metricModeForEntry, bestWeightForEntry, completedRepsOf, workoutDay, workoutAt } from '../lib/history.js'
 import { fmtNum, fmtDate, fmtVol, todayISO, isoOf, weekKey, weekStartOf, exerciseNameText } from '../lib/format.js'
-import { speedUnitOf } from '../lib/speed.js'
+import { speedUnitOf, speedLabel, toSpeed } from '../lib/speed.js'
 import { distanceUnit, toDistance } from '../lib/cardio.js'
 import { t, exerciseNameFor, exerciseNameClass, getLang } from '../lib/i18n.js'
 import { bwSheet, goalSheet, calendarSheet, dayOverrideSheet, workoutDetailSheet, exerciseHistorySheet, WorkoutRow, bwDeltaColor, weighInsSheet } from '../sheets.jsx'
@@ -482,14 +482,14 @@ export default function Stats() {
       desc: snapshot.desc || entry?.desc || '',
     }
   }
-  // Machine progress uses floors or distance; speed-based cardio keeps duration as its measure.
+  // Machine progress uses floors or distance; speed-based cardio keeps its top-speed chart.
   const speedUnit = speedUnitOf(S)
   const cardioField = id => {
     const primary = cardioMetrics({ id })[0]
-    return ['floors', 'm'].includes(primary) ? primary : 'min'
+    return ['floors', 'm'].includes(primary) ? primary : 'speed'
   }
-  const cardioUnit = id => cardioField(id) === 'm' ? distanceUnit({ id }, speedUnit) : cardioField(id) === 'floors' ? t('floors') : t('min')
-  const cardioValue = (s, id) => cardioField(id) === 'm' ? toDistance(s.m, cardioUnit(id)) : Number(s[cardioField(id)]) || 0
+  const cardioUnit = id => cardioField(id) === 'm' ? distanceUnit({ id }, speedUnit) : cardioField(id) === 'floors' ? t('floors') : speedLabel(speedUnit)
+  const cardioValue = (s, id) => cardioField(id) === 'm' ? toDistance(s.m, cardioUnit(id)) : cardioField(id) === 'speed' ? toSpeed(s.speed || 0, speedUnit) : Number(s.floors) || 0
   const currentOf = id => {
     for (let i = workouts.length - 1; i >= 0; i--) {
       const data = metricDataOf(workouts[i], id)
@@ -747,7 +747,7 @@ export default function Stats() {
           <div style={{ marginTop: 8 }}>{exList.map((p, i) => <div key={i} className="row between small" style={{ padding: '6px 0', borderBottom: 'var(--hair) solid var(--sep)' }}>
             <span className="muted">{fmtDate(p.d, true)}</span><span>{p.sets.map(s => setLabel(curEx, s, p.target, speedUnit)).join('  ')}</span></div>)}</div>
           <div className="small dim" style={{ marginTop: 8 }}>
-            {onSets ? (perSet.metric === 'reps' ? t('Reps in each working set, one line per set number') : t('Estimated 1RM of each working set, one line per set number')) : onMax ? <>{t('Most reps in a Max set per workout')} · {t('Best:')}{' '}<b className="accent">{maxBest} {t('reps')}</b></> : onEff ? t('Average effort per workout') : onE1 ? t('Estimated 1RM per workout') : curBand ? t('Least assistance band per workout') : curCardio ? (cardioField(curEx) === 'm' ? t('Longest distance per workout') : cardioField(curEx) === 'floors' ? t('Most floors per workout') : t('Longest duration per workout')) : curTimed ? t('Longest hold per workout') : repsOnly ? t('Most reps in a set per workout') : t('Best set weight per workout')}
+            {onSets ? (perSet.metric === 'reps' ? t('Reps in each working set, one line per set number') : t('Estimated 1RM of each working set, one line per set number')) : onMax ? <>{t('Most reps in a Max set per workout')} · {t('Best:')}{' '}<b className="accent">{maxBest} {t('reps')}</b></> : onEff ? t('Average effort per workout') : onE1 ? t('Estimated 1RM per workout') : curBand ? t('Least assistance band per workout') : curCardio ? (cardioField(curEx) === 'm' ? t('Longest distance per workout') : cardioField(curEx) === 'floors' ? t('Most floors per workout') : t('Top speed per workout')) : curTimed ? t('Longest hold per workout') : repsOnly ? t('Most reps in a set per workout') : t('Best set weight per workout')}
             {onEff || onMax || onSets ? '' : <> · {t('Best:')}{' '}<b className="accent">{curBand && !onE1 ? bandHistory.bestLabel : <>{fmtNum(onE1 ? e1Best.est : exBest)} {onE1 ? S.unit : exUnit}</>}</b></>}
           </div>
           {onSets && (perSet.drop || perSet.hidden > 0) && <div className="small dim" style={{ marginTop: 4 }}>
