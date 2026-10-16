@@ -6,7 +6,7 @@ import { setLabel, exLine } from './history.js'
 import { planPrintHTML } from './plan-share.js'
 import { setWeightDecimals } from './format.js'
 
-const BIKE = '2138'   // stationary bike, cardio
+const TREADMILL = '2259'   // walking on treadmill, speed-based cardio
 
 afterEach(() => setWeightDecimals(1))
 
@@ -81,17 +81,17 @@ describe('speed in labels', () => {
 
   it('reads a logged cardio set and a planned cardio slot in mph', () => {
     const set = { min: 30, speed: 9.66, done: true }
-    const target = { id: BIKE, sets: 1, min: 30, speed: 9.66 }
-    expect(setLabel(BIKE, set, target, 'mph')).toBe('30 min @ 6 mph')
-    expect(setLabel(BIKE, set, target)).toBe('30 min @ 9.7 km/h')
+    const target = { id: TREADMILL, sets: 1, min: 30, speed: 9.66 }
+    expect(setLabel(TREADMILL, set, target, 'mph')).toBe('30 min @ 6 mph')
+    expect(setLabel(TREADMILL, set, target)).toBe('30 min @ 9.7 km/h')
     // A set saved by an older build, with no target: read from its own fields.
-    expect(setLabel(BIKE, set, null, 'mph')).toBe('30 min @ 6 mph')
-    expect(exLine({ id: BIKE, sets: 2, min: 20, speed: 16.09 }, 'lb', 'mph')).toBe('2 × 20 min @ 10 mph')
-    expect(exLine({ id: BIKE, sets: 2, min: 20, speed: 16.09 }, 'kg')).toBe('2 × 20 min @ 16.1 km/h')
+    expect(setLabel(TREADMILL, set, null, 'mph')).toBe('30 min @ 6 mph')
+    expect(exLine({ id: TREADMILL, sets: 2, min: 20, speed: 16.09 }, 'lb', 'mph')).toBe('2 × 20 min @ 10 mph')
+    expect(exLine({ id: TREADMILL, sets: 2, min: 20, speed: 16.09 }, 'kg')).toBe('2 × 20 min @ 16.1 km/h')
   })
 
   it('prints a plan in the profile\'s speed unit', () => {
-    const routines = [{ id: 'c', name: 'Cardio', ex: [{ id: BIKE, sets: 1, min: 25, speed: 16.09 }] }]
+    const routines = [{ id: 'c', name: 'Cardio', ex: [{ id: TREADMILL, sets: 1, min: 25, speed: 16.09 }] }]
     expect(planPrintHTML({ unit: 'lb', week: {}, routines }, '')).toContain('25 min @ 10 mph')
     expect(planPrintHTML({ unit: 'kg', week: {}, routines }, '')).toContain('25 min @ 16.1 km/h')
     expect(planPrintHTML({ unit: 'kg', speedUnit: 'mph', week: {}, routines }, '', { routineId: 'c' })).toContain('25 min @ 10 mph')

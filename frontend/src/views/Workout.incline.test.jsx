@@ -71,9 +71,10 @@ describe('the incline column', () => {
 
   it('is not offered on a bike, unless its rows already carry a grade', () => {
     mount(BIKE, [{ min: 20, speed: 25, done: false }])
-    expect(cells()).toHaveLength(2)
+    expect(cells()).toHaveLength(3)
     expect(inclineCell()).toBe(null)
     mount(BIKE, [{ min: 20, speed: 25, incline: 3, done: false }])
+    expect(cells()).toHaveLength(4)
     expect(inclineCell().querySelector('input').value).toBe('3')
   })
 

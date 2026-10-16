@@ -295,15 +295,14 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
   const eff = EFFORT[kind]
   // The effort column carries the scale key (`eff`) and its field name; unlike weight/reps it
   // is not a stepper — it opens a colour-coded picker (see effortCell). `f` is s.rir or s.rpe.
-  // Cardio's third column is the treadmill's incline (lib/incline.js), on the exercises that have
-  // one and on any whose rows already carry a grade. `opt` again: a cleared field is no incline,
-  // and `store` keeps whatever is typed on the half percent between 0 and 40.
-  const inclineCol = cardio && machineCols.some(c => c.f === 'speed') && (inclineFits(ex) || entry.sets.some(hasIncline))
+  // Speed-based machines offer incline; any row that already carries a grade keeps it editable.
+  // `opt` distinguishes a cleared field from a logged 0.
+  const inclineCol = cardio && ((machineCols.some(c => c.f === 'speed') && inclineFits(ex)) || entry.sets.some(hasIncline))
     ? { f: 'incline', step: INCLINE_STEP, dec: true, opt: true, hd: t('Incline (%)'), store: clampIncline } : null
   const col3 = cardio ? machineCols[1] || inclineCol : mode === 'reps' && eff ? { f: eff.f, eff: kind, hd: t(eff.hd) } : null
-  const extraCols = cardio ? machineCols.slice(2) : []
+  const extraCols = cardio ? [...machineCols.slice(2), ...(inclineCol && machineCols.length >= 2 ? [inclineCol] : [])] : []
   const cardioGrid = cardio && (extraCols.length || !col2)
-    ? { gridTemplateColumns: `28px repeat(${1 + machineCols.length}, minmax(0, 1fr)) 32px` } : undefined
+    ? { gridTemplateColumns: `28px repeat(${1 + machineCols.length + (inclineCol ? 1 : 0)}, minmax(0, 1fr)) 32px` } : undefined
   // The effort column walks its own scale — see stepEffort. Weight and reps step up from 0
   // with no ceiling, as they always did.
   const bump = (s, i, col, dir) => {
@@ -601,8 +600,8 @@ function ExerciseBlock({ entryIdx, compact, dense, editing, onToggle, onToggleSi
       {sideTagOf(s) && <span className="tag acc nocap sidepill" data-l={t('Left')} data-r={t('Right')}><span>{sideTagOf(s)}</span></span>}
       {cell(s, i, col1, 'w')}
       {col2 && cell(s, i, col2, 'r')}
-      {col3 && (col3.eff ? effortCell(s, i, col3) : cell(s, i, col3, 'r inc'))}
-      {extraCols.map(col => <Fragment key={col.f}>{cell(s, i, col, 'r')}</Fragment>)}
+      {col3 && (col3.eff ? effortCell(s, i, col3) : cell(s, i, col3, col3.f === 'incline' ? 'r inc' : 'r'))}
+      {extraCols.map(col => <Fragment key={col.f}>{cell(s, i, col, col.f === 'incline' ? 'r inc' : 'r')}</Fragment>)}
       {/* A timed set is started, not typed: the timer counts the hold down and checks the
           set off itself. The checkbox stays for anyone who timed it on their own watch. */}
       {timed && !editing && <button className="setgo" aria-label={t('Start set')} disabled={s.done || !!working}
