@@ -3298,6 +3298,11 @@ components:
             Never shrinks on the server; stamped for writers that do not stamp (see PUT /api/data).
           additionalProperties: { type: number }
         unit: { type: string, enum: [kg, lb] }
+        bands:
+          type: array
+          maxItems: 20
+          items: { type: string, maxLength: 32, pattern: '^[a-z0-9-]+$' }
+          description: 'Band colors from least to most assistance; defaults to yellow, red, black, purple, green, blue.'
         lang:
           type: string
           description: UI language code ("en", "de", "pt", …); also localizes pushes.
@@ -3467,11 +3472,21 @@ components:
             properties:
               id: { type: string, description: Exercise id. }
               topW: { oneOf: [{ type: number }, { type: 'null' }] }
+              target:
+                allOf:
+                  - $ref: '#/components/schemas/ExerciseMeasures'
+                  - { type: object, additionalProperties: true }
               sets:
                 type: array
                 items:
                   type: object
                   properties:
+                    min: { type: number }
+                    speed: { type: number, description: Speed in km/h. }
+                    floors: { type: integer, minimum: 0, maximum: 5000 }
+                    m: { type: number, minimum: 0, maximum: 1000000, description: Distance in metres. }
+                    level: { type: integer, minimum: 1, maximum: 40 }
+                    band: { type: string, maxLength: 32, pattern: '^[a-z0-9-]+$' }
                     w: { type: number, description: Weight. }
                     r: { type: number, description: Reps. }
                     done: { type: boolean }
@@ -3492,6 +3507,20 @@ components:
         _ts: { type: number, description: 'When this workout was last edited after it was logged, ms, for merging two devices'' copies.' }
       additionalProperties: true
 
+    ExerciseMeasures:
+      type: object
+      description: Optional cardio measurements and categorical band assistance; rowing pace is derived, never stored.
+      properties:
+        floors: { type: integer, minimum: 0, maximum: 5000 }
+        m: { type: number, minimum: 0, maximum: 1000000, description: Distance in metres. }
+        level: { type: integer, minimum: 1, maximum: 40 }
+        metrics:
+          type: array
+          items: { type: string, enum: [speed, incline, floors, m, level] }
+        band: { type: string, maxLength: 32, pattern: '^[a-z0-9-]+$' }
+        bandAssist: { type: boolean }
+      additionalProperties: true
+
     Routine:
       type: object
       description: A workout template (representative shape).
@@ -3502,7 +3531,7 @@ components:
         ex:
           type: array
           description: Exercises with set/rep targets.
-          items: { type: object, additionalProperties: true }
+          items: { $ref: '#/components/schemas/ExerciseMeasures' }
       additionalProperties: true
 
     BodyweightEntry:

@@ -55,6 +55,16 @@ const isStr = v => typeof v === 'string' && v.trim().length > 0;
 const isNum = v => typeof v === 'number' && Number.isFinite(v);
 const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 const clampStr = (v, n) => String(v == null ? '' : v).slice(0, n);
+const bandId = v => typeof v === 'string' && /^[a-z0-9-]{1,32}$/.test(v);
+const METRICS = ['speed', 'incline', 'floors', 'm', 'level'];
+const optionalFields = e => ({
+  ...(isInt(e.floors, 0, 5000) ? { floors: e.floors } : {}),
+  ...(isNum(e.m) && e.m >= 0 && e.m <= 1000000 ? { m: e.m } : {}),
+  ...(isInt(e.level, 1, 40) ? { level: e.level } : {}),
+  ...(Array.isArray(e.metrics) && e.metrics.every(k => METRICS.includes(k)) ? { metrics: [...new Set(e.metrics)] } : {}),
+  ...(bandId(e.band) ? { band: e.band } : {}),
+  ...(typeof e.bandAssist === 'boolean' ? { bandAssist: e.bandAssist } : {})
+});
 // Routine icons: an icon key the app knows or a legacy emoji, never free text (#311).
 export { ROUTINE_GLYPHS } from './glyphs.js';
 
@@ -104,7 +114,7 @@ export function validatePlan(data, ctx = {}) {
   const customEx = (Array.isArray(data.customEx) ? data.customEx : [])
     .filter(c => c && safeId(c.id) && !libraryHas(c.id) && isStr(c.n))
     .slice(0, 20)
-    .map(c => ({ id: clampStr(c.id, 40), n: clampStr(c.n, 60), bp: clampStr(c.bp || 'waist', 30), ...(c.desc ? { desc: clampStr(c.desc, 400) } : {}) }));
+    .map(c => ({ id: clampStr(c.id, 40), n: clampStr(c.n, 60), bp: clampStr(c.bp || 'waist', 30), ...optionalFields(c), ...(c.desc ? { desc: clampStr(c.desc, 400) } : {}) }));
   // Ids the plan may name: invented in this same answer, or already the user's own.
   const proposedIds = new Set([...customEx.map(c => c.id), ...(ctx.customIds || [])]);
 
@@ -124,7 +134,7 @@ export function validatePlan(data, ctx = {}) {
         return;
       }
       if (offEquipment(ctx, e.id)) { errors.push(OFF_EQUIPMENT(`${where}.id`, e.id)); return; }
-      const clean = { id: e.id, sets: isInt(e.sets, 1, 10) ? e.sets : 3 };
+      const clean = { id: e.id, sets: isInt(e.sets, 1, 10) ? e.sets : 3, ...optionalFields(e) };
       const mode = MODES.includes(e.mode) ? e.mode : 'reps';
       const perSide = !!e.side;
       if (mode === 'cardio') {
@@ -346,6 +356,9 @@ export function validateReview(data, plan, ctx = {}) {
           ...(isInt(a.reps, 1, 100) ? { reps: a.reps } : {}),
           ...(isInt(a.sec, 5, 3600) ? { sec: a.sec } : {}),
           ...(isNum(a.weight) && a.weight > 0 && a.weight <= MAX_WEIGHT ? { weight: a.weight } : {}),
+          ...(isInt(a.min, 1, 180) ? { min: a.min } : {}),
+          ...(isNum(a.speed) && a.speed > 0 && a.speed <= MAX_SPEED ? { speed: a.speed } : {}),
+          ...optionalFields(a),
           ...(POLICIES.includes(a.prog) ? { prog: a.prog } : {}),
           ...(isInt(a.repsMin, 1, 100) ? { repsMin: a.repsMin } : {}),
           ...(isInt(a.repsMax, 1, 100) ? { repsMax: a.repsMax } : {}),
@@ -370,7 +383,8 @@ export function validateReview(data, plan, ctx = {}) {
           id: a.id, name: libraryName(a.id),
           ...(isInt(a.sets, 1, 10) ? { sets: a.sets } : {}),
           ...(isInt(a.reps, 1, 100) ? { reps: a.reps } : {}),
-          ...(isNum(a.weight) && a.weight > 0 && a.weight <= MAX_WEIGHT ? { weight: a.weight } : {})
+          ...(isNum(a.weight) && a.weight > 0 && a.weight <= MAX_WEIGHT ? { weight: a.weight } : {}),
+          ...optionalFields(a),
         };
         break;
       }
@@ -396,8 +410,9 @@ export function validateReview(data, plan, ctx = {}) {
       case 'sec': if (!isInt(c.after, 5, 3600) ) { errors.push(`${where}.after must be seconds (5-3600)`); return; } break;
       case 'cardio': {
         const a = c.after || {};
-        if (!isInt(a.min, 1, 180) && !isNum(a.speed)) { errors.push(`${where}.after must carry min and/or speed`); return; }
-        out.after = { ...(isInt(a.min, 1, 180) ? { min: a.min } : {}), ...(isNum(a.speed) && a.speed > 0 && a.speed <= MAX_SPEED ? { speed: a.speed } : {}) };
+        const extra = optionalFields(a);
+        if (!isInt(a.min, 1, 180) && !isNum(a.speed) && !Object.keys(extra).length) { errors.push(`${where}.after must carry min, speed or cardio metrics`); return; }
+        out.after = { ...(isInt(a.min, 1, 180) ? { min: a.min } : {}), ...(isNum(a.speed) && a.speed > 0 && a.speed <= MAX_SPEED ? { speed: a.speed } : {}), ...extra };
         break;
       }
       case 'inc': if (!isNum(c.after) || c.after <= 0 || c.after > MAX_INC) { errors.push(`${where}.after must be a positive increment no larger than ${MAX_INC}`); return; } break;

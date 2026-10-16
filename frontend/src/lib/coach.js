@@ -97,6 +97,11 @@ export function canonicalPlan(S) {
           sec: mode === 'time' ? (e.sec || 0) : 0,
           min: mode === 'cardio' ? (e.min || 0) : 0,
           speed: mode === 'cardio' ? (e.speed || 0) : 0,
+          floors: mode === 'cardio' ? (e.floors ?? null) : null,
+          m: mode === 'cardio' ? (e.m ?? null) : null,
+          level: mode === 'cardio' ? (e.level ?? null) : null,
+          metrics: Array.isArray(e.metrics) ? e.metrics : null,
+          band: e.band || '', bandAssist: e.bandAssist ?? null,
           weight: mode === 'cardio' ? 0 : (e.weight || 0),
           prog: e.prog || '', inc: e.inc || 0, repsMin: e.repsMin || 0, repsMax: e.repsMax || 0,
           bodyweight: isBw(e), side: isPerSide(e),
@@ -117,7 +122,8 @@ export function hashPlan(plan) {
   const canon = JSON.stringify({
     routines: (plan?.routines || []).map(r => [r.id, r.name, r.prog, (r.ex || []).map(e =>
       [e.id, e.mode, e.sets, e.reps, e.sec, e.min, e.speed, e.weight, e.prog, e.inc,
-        e.repsMin, e.repsMax, e.bodyweight, e.side, e.sg].join(':')
+        e.repsMin, e.repsMax, e.bodyweight, e.side, e.sg, e.floors, e.m, e.level,
+        JSON.stringify(e.metrics), e.band, e.bandAssist].join(':')
     )]),
     // `plan` is a canonicalPlan output, so each day is already an array. `{1:['r1']}` → "1=r1",
     // byte-identical to the pre-upgrade fingerprint; `{3:['r2','r3']}` → "3=r2+r3". Weekday
@@ -431,6 +437,7 @@ const CHANGE_APPLY = {
     else if (e.mode === 'time') e.sec = a.sec || 45
     else e.reps = a.reps || 10
     if (a.weight > 0) e.weight = a.weight
+    for (const k of ['floors', 'm', 'level', 'metrics', 'band', 'bandAssist']) if (a[k] != null) e[k] = a[k]
     if (POLICIES.includes(a.prog)) e.prog = a.prog
     if (Number.isInteger(a.repsMin)) e.repsMin = a.repsMin
     if (Number.isInteger(a.repsMax)) e.repsMax = a.repsMax
@@ -461,8 +468,9 @@ const CHANGE_APPLY = {
     // not the prescription. Carrying `side: true` from a lunge onto a leg press would make the
     // app halve a rep count that was never per-side, so an explicit flag is dropped and the new
     // exercise goes back to whatever the catalogue says about it.
-    const { bodyweight, side, ...keep } = old
+    const { bodyweight, side, band, bandAssist, ...keep } = old
     r.ex[i] = { ...keep, id: canonicalExId(a.id), ...(a.sets ? { sets: a.sets } : {}), ...(a.reps ? { reps: a.reps } : {}), ...(a.weight > 0 ? { weight: a.weight } : {}) }
+    for (const k of ['band', 'bandAssist']) if (a[k] != null) r.ex[i][k] = a[k]
   },
   sets: (s, c) => { need(findExIn(s, c)).sets = c.after },
   reps: (s, c) => { need(findExIn(s, c)).reps = c.after },
@@ -471,8 +479,7 @@ const CHANGE_APPLY = {
   sec: (s, c) => { need(findExIn(s, c)).sec = c.after },
   cardio: (s, c) => {
     const e = need(findExIn(s, c))
-    if (c.after?.min != null) e.min = c.after.min
-    if (c.after?.speed != null) e.speed = c.after.speed
+    for (const k of ['min', 'speed', 'floors', 'm', 'level', 'metrics']) if (c.after?.[k] != null) e[k] = c.after[k]
   },
   inc: (s, c) => { need(findExIn(s, c)).inc = c.after },
   'exercise-prog': (s, c) => { need(findExIn(s, c)).prog = c.after },
