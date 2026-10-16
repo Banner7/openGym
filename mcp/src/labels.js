@@ -19,7 +19,7 @@ export function exLine(cfg, unit) {
   const mode = modeOf(cfg)
   const n = cfg.sets || 1
   const load = cfg.weight ? ' · ' + fmtNum(cfg.weight) + ' ' + unit : ''
-  if (mode === 'cardio') return `${n} × ${cfg.min || 20} min @ ${fmtNum(cfg.speed || 8)} km/h`
+  if (mode === 'cardio') return `${n} × ${setLabel(cfg.id, { ...cfg, done: undefined }, cfg, unit === 'lb' ? 'mph' : 'kmh')}`
   if (mode === 'time') return `${n} × ${fmtSec(cfg.sec || 45)}${load}`
   // Pyramid sets read as their per-set targets, the way the app shows them ("12 · 8 · 6 · Max · 12").
   if (isPyramid(cfg)) return pyramidLabel(cfg.pyramid)
@@ -28,6 +28,7 @@ export function exLine(cfg, unit) {
   const reps = cfg.repsMin > 0 && cfg.repsMin < cfg.reps ? `${cfg.repsMin}–${cfg.reps}` : `${cfg.reps}`
   // Triple progression's set range reads the same way ("3–5 × 8–12").
   const sets = cfg.setsMax > n ? `${n}–${cfg.setsMax}` : n
+  if (cfg.band) return `${sets} × ${reps} · ${cfg.band} band`
   return `${sets} × ${reps}${load}`
 }
 

@@ -200,7 +200,7 @@ function cleanEx(e) {
   const mode = modeOf(e, LIB_BY_ID.get(e.id));
   o.mode = mode;
   const put = (k, v) => { if (num(v) !== undefined) o[k] = v; };
-  if (mode === 'cardio') { put('min', e.min); put('speed', e.speed); }
+  if (mode === 'cardio') for (const k of ['min', 'speed', 'incline', 'floors', 'm', 'level']) put(k, e[k]);
   else if (mode === 'time') { put('sec', e.sec); if (e.weight) put('weight', e.weight); }
   else { put('reps', e.reps); if (e.weight) put('weight', e.weight); }
   if (policy(e.prog)) o.prog = e.prog;
@@ -215,6 +215,9 @@ function cleanEx(e) {
   // absent flag has always meant "whatever the exercise says", and still does.
   if (e.bodyweight != null) o.bodyweight = !!e.bodyweight;
   if (e.side) o.side = true;
+  if (typeof e.band === 'string') o.band = e.band;
+  if (typeof e.bandAssist === 'boolean') o.bandAssist = e.bandAssist;
+  if (Array.isArray(e.metrics)) o.metrics = e.metrics;
   // A superset tag is an id the app mints (sg-0-1, hs + uid()), so it is bounded like one.
   if (e.sg) o.sg = ident(e.sg);
   return o;
@@ -242,6 +245,11 @@ export function canonicalPlan(S) {
           sec: mode === 'time' ? (e.sec || 0) : 0,
           min: mode === 'cardio' ? (e.min || 0) : 0,
           speed: mode === 'cardio' ? (e.speed || 0) : 0,
+          floors: mode === 'cardio' ? (e.floors ?? null) : null,
+          m: mode === 'cardio' ? (e.m ?? null) : null,
+          level: mode === 'cardio' ? (e.level ?? null) : null,
+          metrics: Array.isArray(e.metrics) ? e.metrics : null,
+          band: e.band || '', bandAssist: e.bandAssist ?? null,
           weight: mode === 'cardio' ? 0 : (e.weight || 0),
           prog: e.prog || '', inc: e.inc || 0, repsMin: e.repsMin || 0, repsMax: e.repsMax || 0,
           // Resolved rather than copied: the fingerprint has to change when a plan starts
@@ -358,8 +366,9 @@ export const FULL_DETAIL_SESSIONS = 3;
 const fmtSet = s => {
   const eff = s.rir != null ? '@RIR' + s.rir : s.rpe != null ? '@RPE' + s.rpe : s.failure === true && !isWarmupSet(s) ? '@failure' : '';
   if (s.sec != null) return s.sec + 's' + eff;
-  if (s.min != null) return s.min + 'min' + (s.speed != null ? '/' + s.speed : '') + eff;
-  return (s.w != null ? s.w + 'x' : '') + (s.r != null ? s.r : '?') + eff;
+  if (s.min != null) return s.min + 'min' + (s.speed != null ? '/' + s.speed : '')
+    + ['incline', 'floors', 'm', 'level'].filter(k => s[k] != null).map(k => ' ' + s[k] + k).join('') + eff;
+  return (s.band ? s.band + ' band x' : s.w != null ? s.w + 'x' : '') + (s.r != null ? s.r : '?') + eff;
 };
 
 /** One logged set, its numbers only. */
@@ -367,13 +376,14 @@ function cleanSet(s) {
   const o = { done: !!s.done };
   if (isWarmupSet(s)) o.warmup = true;
   else if (s.failure === true) o.failure = true;
-  for (const k of ['w', 'r', 'sec', 'min', 'speed', 'rir', 'rpe']) if (num(s[k]) !== undefined) o[k] = s[k];
+  for (const k of ['w', 'r', 'sec', 'min', 'speed', 'incline', 'floors', 'm', 'level', 'rir', 'rpe']) if (num(s[k]) !== undefined) o[k] = s[k];
+  if (typeof s.band === 'string') o.band = s.band;
   return o;
 }
 const entriesOf = w => list(w.entries).filter(en => en && typeof en === 'object');
 const setsOf = en => list(en.sets).filter(s => s && typeof s === 'object');
 const targetOf = en => (en.target && typeof en.target === 'object'
-  ? { sets: num(en.target.sets), reps: num(en.target.reps), sec: num(en.target.sec), weight: num(en.target.weight) }
+  ? { ...cleanEx({ ...en.target, id: en.id }), sets: num(en.target.sets), reps: num(en.target.reps), sec: num(en.target.sec), weight: num(en.target.weight) }
   : null);
 
 /** One older workout as a summary: what was done, the top set, whether targets were hit. */
@@ -396,7 +406,7 @@ function compactWorkout(w) {
         id: ident(en.id),
         name: libraryName(en.id),
         done: done.length + '/' + sets.length,
-        ...(target ? { target: fmtSet({ w: target.weight, r: target.reps, sec: target.sec }) } : {}),
+        ...(target ? { target: fmtSet({ ...target, w: target.weight, r: target.reps }) } : {}),
         ...(top ? { top: fmtSet(top) } : {})
       };
     })
@@ -493,6 +503,8 @@ export function build(S, opts = {}) {
       // picked one has it worked out per device and never stored (#303).
       lang: langTag(opts.lang) || word(S.lang, 16) || 'en',
       unit: word(S.unit, 8) || 'kg',
+      bands: (Array.isArray(S.bands) ? S.bands : ['yellow', 'red', 'black', 'purple', 'green', 'blue'])
+        .filter(v => typeof v === 'string' && /^[a-z0-9-]{1,32}$/.test(v)).slice(0, 20),
       effortScale: effortOf(S),
       today: iso(new Date())
     },

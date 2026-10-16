@@ -51,6 +51,10 @@ function withCustomsIndexed(S, build) {
   try { return build() } finally { registerCustom([]) }
 }
 
+const optionalMeasures = s => Object.fromEntries(
+  ['incline', 'floors', 'm', 'level', 'metrics', 'band', 'bandAssist'].filter(k => s[k] != null).map(k => [k, s[k]])
+)
+
 function entryView(e, S) {
   const ex = exerciseOf(e.id, S)
   // Spread id into the cfg the way every call site in the app does (Workout.jsx, Stats.jsx,
@@ -66,13 +70,14 @@ function entryView(e, S) {
     target: e.target || null,
     sets: (e.sets || []).map(s => ({
       done: !!s.done,
-      label: setLabel(e.id, { ...s, done: undefined }, cfg),
+      label: setLabel(e.id, { ...s, done: undefined }, cfg, S.unit === 'lb' ? 'mph' : 'kmh'),
       // Taken to failure (the app's "F"): RIR 0 for effort when nothing was rated by hand.
       ...(isFailureSet(s) ? { failure: true } : {}),
       w: Number(s.w) || 0,
       r: Number(s.r) || 0,
       sec: Number(s.sec) || 0,
       min: Number(s.min) || 0,
+      ...optionalMeasures(s),
       speed: Number(s.speed) || 0
     }))
   }
@@ -170,6 +175,7 @@ export const getRoutine = {
           sec: mode === 'time' ? (cfg.sec || 0) : undefined,
           min: mode === 'cardio' ? (cfg.min || 0) : undefined,
           speed: mode === 'cardio' ? (cfg.speed || 0) : undefined,
+          ...optionalMeasures(cfg),
           weight: cfg.weight != null ? cfg.weight : undefined,
           increment: cfg.inc != null ? cfg.inc : undefined,
           deload_factor: cfg.deloadFactor != null ? cfg.deloadFactor : undefined,
@@ -593,12 +599,15 @@ export const previewSession = {
           reps: mode === 'reps' ? (cfg.reps || 0) : undefined,
           sec: mode === 'time' ? (cfg.sec || 0) : undefined,
           min: mode === 'cardio' ? (cfg.min || 0) : undefined,
+          speed: mode === 'cardio' ? cfg.speed : undefined,
+          ...optionalMeasures(cfg),
           weight: cfg.weight != null ? cfg.weight : undefined,
           summary: exLine(cfg, unit)
         },
         prescription: {
           kind: plan.kind,
           weight: plan.weight != null ? plan.weight : undefined,
+          band: plan.band,
           reps: plan.reps != null ? plan.reps : undefined,
           sets: plan.sets != null ? plan.sets : undefined,
           // Triple progression aims each set on its own ("12, 12, 12, 9"); `reps` is the first set's.
@@ -610,11 +619,12 @@ export const previewSession = {
           phase: isWarmupRow(s) ? 'warmup' : 'work',
           type: s.type || 'straight',
           ...(isFailureSet(s) ? { failure: true } : {}),
-          label: setLabel(cfg.id, { ...s, done: undefined }, { ...cfg, id: cfg.id }),
+          label: setLabel(cfg.id, { ...s, done: undefined }, { ...cfg, id: cfg.id }, unit === 'lb' ? 'mph' : 'kmh'),
           w: Number(s.w) || 0,
           r: Number(s.r) || 0,
           sec: Number(s.sec) || 0,
           min: Number(s.min) || 0,
+          ...optionalMeasures(s),
           speed: Number(s.speed) || 0
         })),
         weight_source: wSrc,
@@ -628,13 +638,15 @@ export const previewSession = {
           ...(mode === 'reps' && cfg.weight != null && openW !== cfg.weight ? ['weight'] : []),
           ...(mode === 'reps' && (cfg.reps || 0) > 0 && openR !== cfg.reps ? ['reps'] : []),
           ...(mode === 'time' && (cfg.sec || 0) > 0 && openSec !== cfg.sec ? ['sec'] : []),
-          ...(mode === 'cardio' && (cfg.min || 0) > 0 && openMin !== cfg.min ? ['min'] : [])
+          ...(mode === 'cardio' && (cfg.min || 0) > 0 && openMin !== cfg.min ? ['min'] : []),
+          ...['speed', 'floors', 'm', 'level', 'band'].filter(k => cfg[k] != null && work[0]?.[k] !== cfg[k])
         ],
         differs_from_plan:
           (mode === 'reps' && cfg.weight != null && openW !== cfg.weight) ||
           (mode === 'reps' && (cfg.reps || 0) > 0 && openR !== cfg.reps) ||
           (mode === 'time' && (cfg.sec || 0) > 0 && openSec !== cfg.sec) ||
-          (mode === 'cardio' && (cfg.min || 0) > 0 && openMin !== cfg.min)
+          (mode === 'cardio' && (cfg.min || 0) > 0 && openMin !== cfg.min) ||
+          ['speed', 'floors', 'm', 'level', 'band'].some(k => cfg[k] != null && work[0]?.[k] !== cfg[k])
       }
     })
 
@@ -663,6 +675,8 @@ export const previewSession = {
         opening_sec: e.opening_sets.filter(s => s.phase === 'work')[0]?.sec ?? null,
         planned_min: e.planned.min,
         opening_min: e.opening_sets.filter(s => s.phase === 'work')[0]?.min ?? null,
+        planned_metrics: optionalMeasures(e.planned),
+        opening_metrics: optionalMeasures(e.opening_sets.find(s => s.phase === 'work') || {}),
         changed: e.changed,
         reason: e.prescription.why || e.weight_source_text
       }))
