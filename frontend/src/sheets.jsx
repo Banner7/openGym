@@ -3273,9 +3273,15 @@ export function exitWorkoutEdit(onExit = () => nav('/history')) {
 
 // "60 kg × 5, 5, 4", or "60×5 · 62.5×5" when the weight changed between sets; a bodyweight lift
 // without load is just its reps. A set taken to failure keeps its "F", as it does in the history.
-export function setsLine(sets, unit) {
+export function setsLine(sets, unit, bandAssist = false) {
   const ws = new Set(sets.map(s => s.w))
   const reps = s => s.r + (s.f ? ' ' + t('F') : '')
+  if (bandAssist || sets.some(s => s.band)) {
+    const band = s => s.band ? t('{0} band', bandName(s.band)) : t('Band')
+    const same = sets.every(s => s.band === sets[0]?.band)
+    return same ? band(sets[0] || {}) + ' × ' + sets.map(reps).join(', ')
+      : sets.map(s => band(s) + ' × ' + reps(s)).join(' · ')
+  }
   if (ws.size === 1) {
     const w0 = sets[0].w
     return (w0 > 0 ? fmtNum(w0) + ' ' + unit + ' × ' : '') + sets.map(reps).join(', ')
@@ -3298,9 +3304,11 @@ function LastAndNext({ st, w }) {
           {tr ? <span style={{ color: tr[1], display: 'inline-flex' }} aria-label={row.trend > 0 ? t('Up on last time') : row.trend < 0 ? t('Down on last time') : t('Same as last time')}><Icon name={tr[0]} /></span>
             : <span className="tag nocap">{t('First time')}</span>}
         </div>
-        <div className="small">{t('Today')}: {setsLine(row.today, st.unit)}</div>
-        {row.last && <div className="small dim">{t('Last time')}: {setsLine(row.last, st.unit)}</div>}
-        {row.next && <div className="small accent">{t('Next time')}: {row.next.w != null ? fmtNum(row.next.w) + ' ' + st.unit : ''}{row.next.w != null && row.next.r != null ? ' × ' : ''}{row.next.r != null ? row.next.r : ''} · {nextWord[row.next.kind]}</div>}
+        <div className="small">{t('Today')}: {setsLine(row.today, st.unit, row.bandAssist)}</div>
+        {row.last && <div className="small dim">{t('Last time')}: {setsLine(row.last, st.unit, row.bandAssist)}</div>}
+        {row.next && <div className="small accent">{t('Next time')}: {row.bandAssist
+          ? (row.next.band ? t('{0} band', bandName(row.next.band)) : t('Band')) + (row.next.r != null ? ' × ' + row.next.r : '')
+          : <>{row.next.w != null ? fmtNum(row.next.w) + ' ' + st.unit : ''}{row.next.w != null && row.next.r != null ? ' × ' : ''}{row.next.r != null ? row.next.r : ''} · {nextWord[row.next.kind]}</>}</div>}
       </div>
     })}</div>
   </div>

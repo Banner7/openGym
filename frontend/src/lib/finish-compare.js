@@ -5,18 +5,28 @@
 import { isWarmupRow, isFailureSet } from './workout-model.js'
 import { buildPlannedEntry } from './session-start.js'
 import { workoutAt, modeOf } from './history.js'
+import { isBandAssisted, bandsOf, compareBandSets } from './exercises.js'
 
 const workSets = entry => (Array.isArray(entry?.sets) ? entry.sets : [])
   .filter(s => s && s.done && !isWarmupRow(s) && Number(s.r) > 0)
   // `f`: taken to failure, so the summary can mark it; written only when true.
-  .map(s => ({ w: Number(s.w) || 0, r: Math.round(Number(s.r)), ...(isFailureSet(s) ? { f: true } : {}) }))
+  .map(s => ({ w: Number(s.w) || 0, r: Math.round(Number(s.r)), ...(typeof s.band === 'string' ? { band: s.band } : {}), ...(isFailureSet(s) ? { f: true } : {}) }))
 
 const top = sets => sets.reduce((m, s) => Math.max(m, s.w), 0)
 const reps = sets => sets.reduce((n, s) => n + s.r, 0)
 
 /** -1, 0 or 1: today against last time, by the heaviest set first, then by total reps. */
-export function trendOf(today, last) {
+export function trendOf(today, last, S, bandAssist = false) {
   if (!last?.length) return null
+  if (bandAssist || today.some(s => s.band) || last.some(s => s.band)) {
+    const bands = bandsOf(S)
+    if ([...today, ...last].some(s => !bands.includes(s.band))) return null
+    const best = sets => sets.reduce((a, b) => compareBandSets(b, a, S) > 0 ? b : a, null)
+    const a = best(today), b = best(last)
+    if (!a || !b) return null
+    const load = bands.indexOf(b.band) - bands.indexOf(a.band)
+    return Math.sign(load || reps(today) - reps(last))
+  }
   const dw = top(today) - top(last)
   if (Math.abs(dw) > 1e-9) return dw > 0 ? 1 : -1
   const dr = reps(today) - reps(last)
@@ -34,6 +44,7 @@ export function finishCompare(st, w) {
     if (mode !== 'reps') continue
     const today = workSets(entry)
     if (!today.length) continue
+    const bandAssist = isBandAssisted(entry) || today.some(s => s.band)
     seen.add(entry.id)
     let last = null
     for (let i = workouts.length - 1; i >= 0 && !last; i--) {
@@ -48,16 +59,17 @@ export function finishCompare(st, w) {
     if (cfg) {
       try {
         const built = buildPlannedEntry(st, cfg, routine)
-        const nw = built.target?.weight, nr = built.target?.reps
+        const nw = built.target?.weight, nr = built.target?.reps, band = built.target?.band
         if (nw != null || nr != null) {
           const kind = built.plan?.kind === 'deload' ? 'deload'
-            : nw != null && nw > top(today) + 1e-9 ? 'up'
-              : nw != null && nw < top(today) - 1e-9 ? 'down' : 'hold'
-          next = { w: nw ?? null, r: nr ?? null, sets: built.target?.sets ?? null, kind }
+            : bandAssist ? built.plan?.kind === 'up' ? 'up' : 'hold'
+              : nw != null && nw > top(today) + 1e-9 ? 'up'
+                : nw != null && nw < top(today) - 1e-9 ? 'down' : 'hold'
+          next = { w: bandAssist ? null : nw ?? null, r: nr ?? null, sets: built.target?.sets ?? null, kind, ...(bandAssist ? { band: band ?? null } : {}) }
         }
       } catch { /* a routine the builder cannot read keeps its row without a "next" */ }
     }
-    rows.push({ id: entry.id, today, last, trend: trendOf(today, last), next })
+    rows.push({ id: entry.id, today, last, trend: trendOf(today, last, st, bandAssist), next, ...(bandAssist ? { bandAssist: true } : {}) })
   }
   return rows
 }

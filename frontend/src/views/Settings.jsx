@@ -1341,8 +1341,8 @@ function BandSettings({ S, update }) {
       <button className="iconbtn" aria-label={t('Move down')} disabled={index === bands.length - 1} onClick={() => move(index, 1)}><Icon name="arrowDown" /></button>
       <button className="iconbtn" aria-label={t('Delete')} disabled={bands.length <= 1} onClick={() => save(bands.filter((_, i) => i !== index))}><Icon name="trash" /></button>
     </Row>)}
-    <Row title={t('Add band color')}>
-      <input aria-label={t('Band color')} value={color} onChange={e => setColor(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add() }} />
+    <Row title={t('Add band color')} className="sp-band-add">
+      <TextField aria-label={t('Band color')} placeholder={t('Band color')} value={color} onChange={e => setColor(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add() }} />
       <button className="iconbtn" aria-label={t('Add')} onClick={add}><Icon name="plus" /></button>
     </Row>
   </Section>
